@@ -9,7 +9,9 @@
     },
     "worker": {
       "wranglerConfig": "wrangler.jsonc",
-      "durableObjectName": "global"
+      "durableObjectName": "global",
+      "host": "127.0.0.1",
+      "port": 3001
     }
   }
 }

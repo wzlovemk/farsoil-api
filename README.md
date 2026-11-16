@@ -59,7 +59,7 @@ npm run runtime:node
 npm run runtime:worker
 ```
 
-Node 默认监听 `127.0.0.1:3001`；Wrangler 本地 Worker 使用 Wrangler 分配的本地端口。两种运行时健康端点均为 `GET /health`。游戏客户端位于独立仓库 `wzlovemk/fram-game`；其开发/测试客户端默认直接请求该服务器，Vite 的 `/api/v1` 代理仍保留供显式同源模式使用。正式部署要求 HTTPS 并建议同源反向代理。
+Node 与本地 Worker 默认都监听 `127.0.0.1:3001`，端口来自 `config/runtime.v1.json`。因此 `fram-game` 的本地 API 地址无需随运行时切换。两种运行时健康端点均为 `GET /health`。游戏客户端位于独立仓库 `wzlovemk/fram-game`；其开发/测试客户端默认直接请求该服务器，Vite 的 `/api/v1` 代理仍保留供显式同源模式使用。正式部署要求 HTTPS 并建议同源反向代理。
 
 ### Cloudflare Worker 配置
 

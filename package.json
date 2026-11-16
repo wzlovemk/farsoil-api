@@ -17,8 +17,8 @@
     "drop:preflight": "node --experimental-strip-types scripts/drop-preflight.mjs --validate",
     "drop:release-check": "node --experimental-strip-types scripts/drop-preflight.mjs --release",
     "runtime": "node scripts/runtime.mjs",
-    "runtime:node": "node --experimental-strip-types src/main.ts",
-    "runtime:worker": "npx --yes wrangler@4.162.0 dev --config wrangler.jsonc",
+    "runtime:node": "node scripts/runtime.mjs node",
+    "runtime:worker": "node scripts/runtime.mjs worker",
     "worker:dry-run": "npx --yes wrangler@4.162.0 deploy --dry-run --outdir dist-worker --config wrangler.jsonc",
     "worker:deploy": "npx --yes wrangler@4.162.0 deploy --config wrangler.jsonc"
   },

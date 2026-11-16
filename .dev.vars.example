@@ -1,6 +1,6 @@
 # Copy to .dev.vars (ignored by git) for local Worker development.
 AUCTION_CORS_ORIGINS=http://127.0.0.1:5173
-AUTH_PUBLIC_ORIGIN=http://127.0.0.1:8787
+AUTH_PUBLIC_ORIGIN=http://127.0.0.1:3001
 AUTH_CLIENT_RETURN_ORIGIN=http://127.0.0.1:5173
 AUTH_GOOGLE_CLIENT_ID=replace-with-google-web-oauth-client-id
 AUTH_GOOGLE_CLIENT_SECRET=replace-with-rotated-server-only-secret

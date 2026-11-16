@@ -7,7 +7,7 @@ if(config.schemaVersion!==1||config.configId!=="farsoil-api-runtime-v1"||
   !config.runtimes?.node||!config.runtimes?.worker)
   throw new Error("Invalid FARSOIL API runtime configuration");
 
-const requested=(process.env.FARSOIL_API_RUNTIME||config.localRuntime).trim();
+const requested=(process.argv[2]||process.env.FARSOIL_API_RUNTIME||config.localRuntime).trim();
 if(!["node","worker"].includes(requested))throw new Error("FARSOIL_API_RUNTIME must be node or worker");
 
 let command,args,env={...process.env};
@@ -18,7 +18,8 @@ if(requested==="node"){
   env.AUCTION_PORT=env.AUCTION_PORT||String(config.runtimes.node.port);
 }else{
   command=process.platform==="win32"?"npx.cmd":"npx";
-  args=["--yes","wrangler@4.162.0","dev","--config",String(config.runtimes.worker.wranglerConfig)];
+  args=["--yes","wrangler@4.162.0","dev","--config",String(config.runtimes.worker.wranglerConfig),
+    "--ip",String(config.runtimes.worker.host),"--port",String(config.runtimes.worker.port)];
 }
 process.stdout.write("FARSOIL API runtime: "+requested+"\n");
 const child=spawn(command,args,{stdio:"inherit",env});
