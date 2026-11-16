@@ -1,5 +1,7 @@
 import {createHash} from "node:crypto";
 import {ApiError} from "../config.ts";
+import {hashAchievementRequest} from "../achievements/engine.ts";
+import {parseAchievementBatch} from "../achievements/events.ts";
 
 const encoder=new TextEncoder();
 const apiPrefix="/api/v1";
@@ -18,6 +20,9 @@ export class WorkerApiRouter {
     this.accounts=services.accounts;
     this.economy=services.economy;
     this.providers=services.providers;
+    this.achievements=services.achievements;
+    this.steamSync=services.steamSync;
+    this.canMintFromClient=services.canMintFromClient;
     this.env=env;
     this.schemaVersion=schemaVersion;
     this.rate=new Map();
@@ -300,6 +305,39 @@ export class WorkerApiRouter {
       if(method==="POST"&&path===apiPrefix+"/auth/password/change"){
         this.authLimit(request,"login");
         return this.response(request,await this.accounts.changePassword(this.accountContext(request),await this.body(request)));
+      }
+
+      if(method==="GET"&&path===apiPrefix+"/achievements/catalog"){
+        this.accountContext(request);
+        return this.response(request,this.achievements.catalog(this.locale(request)));
+      }
+      if(method==="GET"&&path===apiPrefix+"/achievements/me"){
+        const ctx=this.accountContext(request);
+        return this.response(request,this.achievements.mine(ctx.userId,this.locale(request)));
+      }
+      if(method==="GET"&&path===apiPrefix+"/achievements/steam-status"){
+        const ctx=this.accountContext(request);
+        this.steamSync.reconcileUser(ctx.userId);
+        return this.response(request,this.steamSync.status(ctx.userId));
+      }
+      if(method==="GET"&&path===apiPrefix+"/achievements/summary"){
+        const ctx=this.accountContext(request);
+        return this.response(request,this.achievements.summary(ctx.userId));
+      }
+      if(method==="POST"&&path===apiPrefix+"/game-events/batch"){
+        const ctx=this.accountContext(request);
+        const key=request.headers.get("idempotency-key");
+        if(typeof key!=="string"||!/^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/.test(key))
+          throw new ApiError(422,"INVALID_IDEMPOTENCY_KEY","A valid batch Idempotency-Key is required");
+        const input=await this.body(request);
+        const serialized=JSON.stringify(input);
+        if(encoder.encode(serialized).byteLength>this.achievements.config.limits.maxBatchBytes)
+          throw new ApiError(413,"EVENT_BATCH_TOO_LARGE","Batch exceeds event payload limit");
+        const parsed=parseAchievementBatch(input,this.achievements.config);
+        if(this.canMintFromClient&&parsed.items.some(item=>"sourceIds" in item&&item.sourceIds.length>0))
+          this.engine.ensureAccount(ctx.userId,ctx.sessionId);
+        return this.response(request,this.achievements.submit(
+          ctx.userId,parsed.worldId,key,hashAchievementRequest(input),parsed.items));
       }
 
       const world=path.match(/^\/api\/v1\/economy\/worlds\/([^/]+)$/);
