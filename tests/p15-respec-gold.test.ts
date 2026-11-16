@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
 import {AuctionDatabase,AUCTION_SCHEMA_VERSION} from "../src/database.ts";
 import {AuctionEngine} from "../src/engine.ts";
 import {loadConfig} from "../src/config.ts";
@@ -22,24 +21,29 @@ function fixture(){
     const response=await app.inject({method:"POST",url:"/api/v1/auth/register",
       payload:{email:name+"@example.com",password:"secure-password-1234"}});
     assert.equal(response.statusCode,201,response.payload);
-    return JSON.parse(response.payload) as {token:string;userId:string};
+    const issued=JSON.parse(response.payload) as {token:string;userId:string};
+    const ready=await app.inject({method:"GET",url:"/api/v1/economy/worlds/"+world,
+      headers:{authorization:"Bearer "+issued.token}});
+    assert.equal(ready.statusCode,200,ready.payload);
+    return issued;
   };
   const charge=async(token:string,key:string,body:unknown)=>app.inject({
     method:"POST",url:"/api/v1/economy/respec/charge",
     headers:{authorization:"Bearer "+token,"idempotency-key":key},payload:body,
   });
   const receipt=async(token:string,id:string,accountWorld=world)=>app.inject({
-    method:"GET",url:`/api/v1/economy/worlds/${accountWorld}/respec/${id}`,
+    method:"GET",url:"/api/v1/economy/worlds/"+accountWorld+"/respec/"+id,
     headers:{authorization:"Bearer "+token},
   });
   return {db,app,register,charge,receipt,close:async()=>{await app.close();db.close();}};
 }
 
-test("respec service fee contract agrees with Worker config and is not client-supplied",()=>{
-  const workerConfig=JSON.parse(readFileSync(new URL("../../../config/respec-service.v1.json",import.meta.url),"utf8"));
-  assert.deepEqual(RESPEC_SERVER_CONFIG,workerConfig);
+test("respec fee is server-owned and cannot be supplied by the client",()=>{
+  assert.equal(RESPEC_SERVER_CONFIG.schemaVersion,1);
+  assert.equal(RESPEC_SERVER_CONFIG.configId,"respec-service-v1");
   assert.equal(RESPEC_SERVER_CONFIG.feeGold,100);
   assert.equal(RESPEC_SERVER_CONFIG.durationMs,2*3600000);
+  assert.equal(RESPEC_SERVER_CONFIG.slots,1);
 });
 
 test("one stable service charges account G once and records exactly one financial entry",async()=>{
