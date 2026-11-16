@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
+import authConfigRaw from "../config/auth.v1.json" with {type:"json"};
 import type { AuctionDatabase } from "./database.ts";
 import { ApiError } from "./config.ts";
 import { UserProfiles, type ProviderProfileFacts } from "./userProfiles.ts";
@@ -16,7 +16,7 @@ export type AuthConfig = {
   provider:{challengeTtlSeconds:number;handoffTtlSeconds:number;upstreamTimeoutMs:number};
 };
 export function loadAuthConfig():AuthConfig {
-  const config=JSON.parse(readFileSync(new URL("../config/auth.v1.json",import.meta.url),"utf8")) as AuthConfig;
+  const config=structuredClone(authConfigRaw) as AuthConfig;
   const p=config.password,s=config.session,r=config.rateLimit;
   const pos=(x:unknown)=>typeof x==="number"&&Number.isSafeInteger(x)&&x>0;
   if(config.schemaVersion!==1||config.configId!=="account-auth-v1"||

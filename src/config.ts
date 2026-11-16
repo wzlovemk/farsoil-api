@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import auctionConfigRaw from "../config/auction.v1.json" with {type:"json"};
+import fixtureConfigRaw from "../config/mock-fixtures.v1.json" with {type:"json"};
 
 export type AuctionConfig = {
   schemaVersion: number; configId: string; status: string; marketMode: "demo";
@@ -31,12 +32,9 @@ export class ApiError extends Error {
     super(message); this.name = "ApiError"; this.status = status; this.code = code;
   }
 }
-function readJson<T>(file: string): T {
-  return JSON.parse(readFileSync(new URL("../config/" + file, import.meta.url), "utf8")) as T;
-}
 export function loadConfig(): { rules: AuctionConfig; fixtures: Fixture } {
-  const rules = readJson<AuctionConfig>("auction.v1.json");
-  const fixtures = readJson<Fixture>("mock-fixtures.v1.json");
+  const rules = structuredClone(auctionConfigRaw) as AuctionConfig;
+  const fixtures = structuredClone(fixtureConfigRaw) as Fixture;
   const fail = (message: string): never => { throw new Error("Invalid auction config: " + message); };
   const gold = (n: number) => Number.isSafeInteger(n) && n >= 0;
   if (rules.schemaVersion !== 1 || rules.marketMode !== "demo" ||

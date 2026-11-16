@@ -1,5 +1,7 @@
 import {createHash,randomUUID} from "node:crypto";
-import {readFileSync} from "node:fs";
+import respecConfigRaw from "../config/respec-service.v1.json" with {type:"json"};
+import economyConfigRaw from "../config/economy-production.v1.json" with {type:"json"};
+import buildingPricesRaw from "../config/building-prices.v1.json" with {type:"json"};
 import {ApiError} from "./config.ts";
 import type {AuctionDatabase} from "./database.ts";
 
@@ -14,7 +16,7 @@ export type P15Config={schemaVersion:number;configId:string;status:string;quanti
 type Result={serverTime:string;[key:string]:unknown};
 const max=Number.MAX_SAFE_INTEGER;
 export const RESPEC_SERVER_CONFIG=(()=>{
-  const cfg=JSON.parse(readFileSync(new URL("../config/respec-service.v1.json",import.meta.url),"utf8")) as {
+  const cfg=structuredClone(respecConfigRaw) as {
     schemaVersion:number;configId:string;buildingId:string;durationMs:number;feeGold:number;slots:number;
   };
   if(cfg.schemaVersion!==1||cfg.configId!=="respec-service-v1"||
@@ -44,7 +46,7 @@ const payload=(raw:unknown,fields:readonly string[]):Record<string,unknown>=>{
   return raw as Record<string,unknown>;
 };
 export function loadP15Config():P15Config{
-  const c=JSON.parse(readFileSync(new URL("../config/economy-production.v1.json",import.meta.url),"utf8")) as P15Config;
+  const c=structuredClone(economyConfigRaw) as P15Config;
   if(c.schemaVersion!==1||c.configId!=="p15-economy-node1"||
     c.status!=="PROVISIONAL_NOT_BALANCED"||c.quantityUnit!=="U"||c.timeUnit!=="real-seconds"||
     !Array.isArray(c.catalog)||!c.catalog.length||!Array.isArray(c.recipes)||!c.recipes.length||
@@ -86,7 +88,7 @@ export class P15Economy {
   readonly config:P15Config;
   readonly clock:()=>number;
   private readonly buildingPrices: {purchase:Record<string,number>;upgrade:Record<string,number>} =
-    (()=>{const prices=JSON.parse(readFileSync(new URL("../config/building-prices.v1.json",import.meta.url),"utf8")) as {
+    (()=>{const prices=structuredClone(buildingPricesRaw) as {
       schemaVersion:number;configId:string;purchase:Record<string,number>;upgrade:Record<string,number>};
       if(prices.schemaVersion!==1||prices.configId!=="p15-building-prices-v1"||!prices.purchase||!prices.upgrade||
         [...Object.values(prices.purchase),...Object.values(prices.upgrade)].some(v=>!positive(v)))

@@ -1,4 +1,4 @@
-import {readFileSync} from "node:fs";
+import userProfileConfigRaw from "../config/user-profile.v1.json" with {type:"json"};
 import type {AuctionDatabase} from "./database.ts";
 import {ApiError} from "./config.ts";
 
@@ -29,7 +29,7 @@ const controlPattern=/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
 const ms=(value:unknown)=>new Date(Number(value)).toISOString();
 
 export function loadUserProfileConfig():UserProfileConfig{
-  const c=JSON.parse(readFileSync(new URL("../config/user-profile.v1.json",import.meta.url),"utf8")) as UserProfileConfig;
+  const c=structuredClone(userProfileConfigRaw) as UserProfileConfig;
   const positive=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)&&v>0;
   if(!c||c.schemaVersion!==1||c.configId!=="user-profile-v1"||
     ![c.minDisplayNameLength,c.maxDisplayNameLength,c.maxAvatarUrlLength,
