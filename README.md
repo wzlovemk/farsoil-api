@@ -1,13 +1,13 @@
-# 异星农场独立账号与拍卖服务器
+# FARSOIL API｜账号、经济与拍卖服务
 
-> 版本：统一服务端 OAuth/OIDC 回调和桌面客户端一次性会话交接已实现并进入代码验证；真实 Google 授权仍需本地私有密钥和浏览器联调。本文件描述当前代码。
+> 本仓库从 `wzlovemk/fram-game/server/auction` 拆分而来。当前阶段仅完成仓库边界拆分，运行时仍保持 Node.js 22 + TypeScript + Fastify + SQLite；迁移 Cloudflare Workers / Durable Objects 属于后续独立阶段，不在本次拆分中改变。\n>\n> 统一服务端 OAuth/OIDC 回调和桌面客户端一次性会话交接已实现并进入代码验证；真实 Google 授权仍需本地私有密钥和浏览器联调。本文件描述当前代码。
 
 ## 架构边界
 
 - Node.js 22、TypeScript、Fastify、SQLite（支持迁移至独立 PostgreSQL 适配层）。独立部署，**不依赖 Cloudflare API**。
 - `account_users.user_id` 是永久身份；`account_password_credentials`、`account_identities`、`account_sessions`、`auth_challenges` 单独管理认证与登录方式。Token 是短期不透明 Bearer，服务器只保存哈希。刷新用独立轮换 `HttpOnly; Secure; SameSite=Lax` Cookie，不写入客户端本地存储。
 - `markets` 的配置化全服共享 `marketId` 只标记服务器拍卖范围；服务端通过真实认证 Session 确定各方 `userId`。钱包、服务器可售库存、挂单卖家、出价人、成交买家、冻结及托管、结算、出价历史、幂等结果分别按 `userId` 追溯。
-- `server/auction/config/mock-fixtures.v1.json` 是**模拟测试资产**，不代表真实 Worker 生产、金币或背包库存。当前游戏背包尚不读取服务器可售库存；只有拍卖服务端持有其模拟库存。
+- `config/mock-fixtures.v1.json` 是**模拟测试资产**，不代表真实 Worker 生产、金币或背包库存。当前游戏背包尚不读取服务器可售库存；只有拍卖服务端持有其模拟库存。
 - 挂单最长有效展示 24 小时，实际支持的竞拍截止选项来自 `auction.v1.json`（30 分钟 / 2 小时 / 6 小时）。**到期的是挂单而非货物**：流拍/合法撤单将完整托管 Lot 原子返还卖家服务器库存，有有效最高出价则成交交付买家；所有结算与退货幂等，账号、余额与交易历史不因挂单到期删除。
 - **旧游客 Session 不兼容**：`POST /api/v1/auth/guest` 已从服务器运行路由和 OpenAPI 删除，旧 `sessions` 表升级后删除；不支持旧游客 Token 恢复/迁移。用户的历史 `guestId` **IndexedDB 本地存档另行保留**，两者不是同一概念。
 
@@ -23,16 +23,16 @@ npm test
 npm start
 ```
 
-启动后默认 `127.0.0.1:3001`，健康端点 `GET /health`。仓库根目录运行 `npm ci`、`npm run dev`；开发/测试客户端默认直接请求该服务器，Vite 的 `/api/v1` 代理仍保留供显式同源模式使用。正式部署要求 HTTPS 并建议同源反向代理。
+启动后默认 `127.0.0.1:3001`，健康端点 `GET /health`。游戏客户端位于独立仓库 `wzlovemk/fram-game`；其开发/测试客户端默认直接请求该服务器，Vite 的 `/api/v1` 代理仍保留供显式同源模式使用。正式部署要求 HTTPS 并建议同源反向代理。
 
 ### 全局客户端服务器地址
 
-唯一默认配置在根目录 `config/server-request.v1.json` 的 `serverUrls`：
+游戏客户端的唯一默认服务器地址配置位于 `wzlovemk/fram-game/config/server-request.v1.json` 的 `serverUrls`：
 
 - `test: "http://127.0.0.1:3001"`：Vite `development` / `test` 模式共用的测试服务器。
 - `production: ""`：正式地址待定，留空保持同源相对请求；其他模式也使用此项，不自动带入测试地址。
 - Vite 的显式同源开发代理也读取此测试项，仅在 `development/test` 模式启用；正式模式和正式预览不继承测试代理。
-- 账号、Google/Steam 起始跳转、拍卖及成就通过 `src/api/serverAddress.ts` 解析同一地址。地址只包含 HTTP(S) Origin，不包含 `/api/v1`、查询、片段或用户信息；末尾 `/` 自动规范化。
+- 游戏客户端的账号、Google/Steam 起始跳转、拍卖及成就通过 `wzlovemk/fram-game/src/api/serverAddress.ts` 解析同一地址。地址只包含 HTTP(S) Origin，不包含 `/api/v1`、查询、片段或用户信息；末尾 `/` 自动规范化。
 - 优先级：显式客户端 `serverUrl` → 非空 `VITE_GAME_SERVER_URL` → 非空旧 `VITE_AUCTION_SERVER_URL` → 当前模式的 JSON 配置。显式 `serverUrl: ""` 保留同源测试/代理能力；空环境变量不覆盖有效默认值。
 - `VITE_AUTH_PUBLIC_ORIGIN` 仅保留为特殊部署的 OAuth Origin 覆盖，空值继承全局地址；原跨主机 Cookie 一致性检查不变。
 - JSON 与 `VITE_*` 都是公开的构建期配置；正式配置改变后须重新构建，不能在其中放 Client Secret。可用根目录 `.env.example` 创建按模式的 `.env.*.local` 覆盖，避免测试覆盖污染正式包。
@@ -40,9 +40,9 @@ npm start
 ### 本地 Google OAuth（独立 API 服务器负责 Start / Callback）
 
 1. 在 Google Cloud「Web 应用」的已获授权重定向 URI 中登记**精确地址**：`http://127.0.0.1:3001/api/v1/auth/callback`。不能继续使用旧的 `/auth/google/callback`，也不能将 `localhost` 与 `127.0.0.1`、端口 `3000` 与 `3001` 混用。
-2. 将 `server/auction/.env.example` 复制为 `server/auction/.env`，填写服务器私有 `AUTH_GOOGLE_CLIENT_ID` 和**新轮换的** `AUTH_GOOGLE_CLIENT_SECRET`；该文件被 Git 忽略。不要提交 Google 下载的客户端密钥 JSON。
-3. 在 `server/auction` 执行 `npm run dev:local`，监听 `127.0.0.1:3001`，授权服务器的 `AUTH_PUBLIC_ORIGIN` 也设为这个 Origin。
-4. 从根目录使用 `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort` 启动 Web 客户端，访问 `http://127.0.0.1:5173`。测试服务器地址已在全局 JSON 中配置，默认不需要额外创建前端 `.env.local`。
+2. 将 `.env.example` 复制为 `.env`，填写服务器私有 `AUTH_GOOGLE_CLIENT_ID` 和**新轮换的** `AUTH_GOOGLE_CLIENT_SECRET`；该文件被 Git 忽略。不要提交 Google 下载的客户端密钥 JSON。
+3. 在本仓库执行 `npm run dev:local`，监听 `127.0.0.1:3001`，授权服务器的 `AUTH_PUBLIC_ORIGIN` 也设为这个 Origin。
+4. 从 `wzlovemk/fram-game` 根目录使用 `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort` 启动 Web 客户端，访问 `http://127.0.0.1:5173`。测试服务器地址已在全局 JSON 中配置，默认不需要额外创建前端 `.env.local`。
 5. 点击 Google 登录，浏览器将进入 `http://127.0.0.1:3001/api/v1/auth/start?provider=google`，经 Google 授权后回到同一 API 服务器的统一 `/api/v1/auth/callback`，最后由服务器按 `AUTH_CLIENT_RETURN_ORIGIN` 返回游戏前端。Web 客户端沿用已有的 `/auth/restore` 领用 Session。
 
 **Cookie 边界**：本地 `5173` 和 `3001` **必须使用同一个主机名**（本例均为 `127.0.0.1`），这样同主机下的 Host-only Cookie 才能通过 Vite 代理送达服务端；跨设备或远程服务端不能用 `127.0.0.1`，必须配置真实可访问的 HTTPS 域名。浏览器需支持回环地址的 Secure Cookie 例外；正式环境不放宽 Cookie 安全属性。
@@ -59,7 +59,7 @@ npm start
 | `AUTH_GOOGLE_CLIENT_ID` | Google OAuth/OIDC Client ID |
 | `AUTH_GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
 
-不要把生产密钥提交 Git。Google/Steam Provider 的允许开关在 `config/auth.v1.json`，对应客户端入口在根目录 `config/account-auth-client.v1.json`：**Google 已启用，Steam 暂未启用，Apple 首期不实现**。Provider 仍需正确环境变量与真实授权联调才可使用。Steam 网页 OpenID 2.0 登录无需 Google OAuth Client Secret。
+不要把生产密钥提交 Git。Google/Steam Provider 的允许开关在 `config/auth.v1.json`，对应客户端入口在 `wzlovemk/fram-game/config/account-auth-client.v1.json`：**Google 已启用，Steam 暂未启用，Apple 首期不实现**。Provider 仍需正确环境变量与真实授权联调才可使用。Steam 网页 OpenID 2.0 登录无需 Google OAuth Client Secret。
 
 配置文件：
 - `config/auth.v1.json`：密码、KDF、Session、Provider、OAuth challenge 和桌面一次性交接有效期、限流。
@@ -104,8 +104,8 @@ npm start
 ## 迁移与验证
 
 - SQLite `user_version=11`：在既有 v10 账号、共享拍卖、成就、掉落及 OAuth 桌面交接表之上，增量新增 `user_profiles/account_emails`；回填已注册的原密码登录邮箱，并以 `userId` 关联，不更改旧身份；升级前备份数据库。
-- `npm --prefix server/auction test`：验证邮箱/第三方模拟授权、Session 轮换、共享拍卖、两人交叉竞拍、挂单到期退货、库存守恒和请求幂等。
-- `.github/workflows/account-v1.yml`、`auction-server.yml`、`auction-acceptance.yml`：服务端类型/测试、Docker 与真实 Chromium AuctionWindow 多视口专项。
+- `npm test`：验证邮箱/第三方模拟授权、Session 轮换、共享拍卖、两人交叉竞拍、挂单到期退货、库存守恒和请求幂等。
+- 本仓库 `.github/workflows/api-ci.yml` 负责服务端类型检查、构建、测试和 Docker smoke；游戏客户端的 Chromium 联调验收继续位于 `wzlovemk/fram-game`，CI 会在运行时检出本仓库。
 - **验收限制**：测试使用模拟的 Provider 响应；真实 Google 登录仍需在授权网页完成端到端联调。桌面系统浏览器的启动行为和凭据安全保存应由具体桌面外壳（如 Electron/Tauri）适配；本阶段仅提供服务端交接 API 和客户端调用方法。原有本地游戏背包与服务器资产可信同步不属于本次 OAuth 修改。
 
 ## DROP-01：正式掉落配置和上线前检查
@@ -119,4 +119,4 @@ DROP-01 当前仅为**已经实现的服务器抽奖能力**，并非生产奖�
 - 服务器运行入口另外拒绝**默认发行引擎**在 `demo` 市场下开启资产发行。仅由专项测试明确注入的测试 `DropEngine` 不受此运行时门禁影响，方便在隔离 SQLite 中验证原子入账。
 - 线上问题应先关闭发奖配置并重启，而不是删除历史抽奖、最后中奖时间和已入账库存。
 
-上线任务清单见 [59 §15.2](../../doc/59-ACHIEVEMENTS-V1.md)。本阶段仍为 `BLOCKED`，不可擅自将占位规则转成正式概率。
+上线任务清单见 `wzlovemk/fram-game/doc/59-ACHIEVEMENTS-V1.md` §15.2。本阶段仍为 `BLOCKED`，不可擅自将占位规则转成正式概率。
