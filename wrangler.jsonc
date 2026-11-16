@@ -19,5 +19,15 @@
   },
   "vars": {
     "FARSOIL_API_RUNTIME": "worker"
-  }
+  },
+  "find_additional_modules": true,
+  "rules": [
+    {
+      "type": "Text",
+      "globs": [
+        "**/*.sql"
+      ],
+      "fallthrough": true
+    }
+  ]
 }

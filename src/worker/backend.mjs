@@ -1,4 +1,6 @@
 import {DurableObject} from "cloudflare:workers";
+import {DurableSqliteDatabase} from "./sqliteDatabase.mjs";
+import {initializeWorkerSchema} from "./migrations.mjs";
 
 const json=(body,status=200)=>new Response(JSON.stringify(body),{
   status,
@@ -15,16 +17,10 @@ export class FarsoilBackend extends DurableObject {
     super(ctx,env);
     this.ctx=ctx;
     this.env=env;
+    this.database=new DurableSqliteDatabase(ctx.storage);
+    this.schemaVersion=0;
     this.ctx.blockConcurrencyWhile(async()=>{
-      this.ctx.storage.sql.exec(
-        "CREATE TABLE IF NOT EXISTS farsoil_runtime_meta("+
-        "key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at_ms INTEGER NOT NULL)"
-      );
-      this.ctx.storage.sql.exec(
-        "INSERT INTO farsoil_runtime_meta(key,value,updated_at_ms) VALUES('runtime','worker',?) "+
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at_ms=excluded.updated_at_ms",
-        Date.now()
-      );
+      this.schemaVersion=initializeWorkerSchema(this.database);
     });
   }
 
@@ -36,7 +32,8 @@ export class FarsoilBackend extends DurableObject {
         service:"farsoil-api",
         runtime:"worker",
         storage:"durable-object-sqlite",
-        migrationPhase:"bootstrap"
+        schemaVersion:this.schemaVersion,
+        migrationPhase:"database"
       });
     }
     return json({
