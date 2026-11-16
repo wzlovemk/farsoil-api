@@ -40,6 +40,18 @@ jobs:
           TOKEN=$(node -e 'const v=JSON.parse(process.argv[1]); if(!v.token)process.exit(2); process.stdout.write(v.token)' "$REGISTER")
           curl -fsS http://127.0.0.1:8787/api/v1/auth/me -H "Authorization: Bearer $TOKEN"
           curl -fsS http://127.0.0.1:8787/api/v1/economy/worlds/worker-ci -H "Authorization: Bearer $TOKEN"
+          BOOTSTRAP=$(curl -fsS http://127.0.0.1:8787/api/v1/auction/bootstrap -H "Authorization: Bearer $TOKEN")
+          node -e 'const v=JSON.parse(process.argv[1]); if(!v.wallet||!v.market)process.exit(2)' "$BOOTSTRAP"
+          LISTING=$(curl -fsS -X POST http://127.0.0.1:8787/api/v1/auction/listings \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -H 'Idempotency-Key: worker-auction-ci-0001' \
+            --data '{"itemId":"wood","quantityU":"1","startUnitPriceGold":1,"buyoutPriceGold":2,"durationSeconds":1800}')
+          node -e 'const v=JSON.parse(process.argv[1]); if(!v.auction||v.auction.status!=="OPEN")process.exit(2)' "$LISTING"
+          RETRY=$(curl -fsS -X POST http://127.0.0.1:8787/api/v1/auction/listings \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -H 'Idempotency-Key: worker-auction-ci-0001' \
+            --data '{"itemId":"wood","quantityU":"1","startUnitPriceGold":1,"buyoutPriceGold":2,"durationSeconds":1800}')
+          node -e 'const a=JSON.parse(process.argv[1]),b=JSON.parse(process.argv[2]); if(a.requestId!==b.requestId||a.auction.auctionId!==b.auction.auctionId)process.exit(2)' "$LISTING" "$RETRY"
           kill "$WORKER_PID" 2>/dev/null || true
           trap - EXIT
       - name: Drop configuration preflight

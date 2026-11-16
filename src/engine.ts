@@ -507,6 +507,40 @@ export class AuctionEngine {
     this.execute("UPDATE auctions SET status='CANCELLED',ended_at_ms=?,version=version+1 WHERE auction_id=?",this.time(),id);
     return this.auction(ctx,id);
   }
+  private priorMutation(ctx:Context,operationName:string,key:string,bodyHash:string):Result|null {
+    const prior=this.one("SELECT * FROM requests WHERE user_id=? AND operation=? AND idempotency_key=?",
+      ctx.userId,operationName,key);
+    if(!prior)return null;
+    if(prior.body_hash!==bodyHash)
+      throw new ApiError(409,"IDEMPOTENCY_KEY_CONFLICT","Same key was used with different request data");
+    return {code:Number(prior.status_code),body:JSON.parse(String(prior.response_json)) as Record<string,unknown>};
+  }
+  private executeMutation(ctx:Context,operation:"create"|"bid"|"buyout"|"cancel",id:string|undefined,
+    body:unknown,requestId:string):Result {
+    let row:DbRow;
+    if(operation==="create")row=this.createListing(ctx,body);
+    else if(operation==="bid")row=this.placeBid(ctx,id!,body);
+    else if(operation==="buyout")row=this.buyout(ctx,id!,body);
+    else row=this.cancel(ctx,id!,body);
+    const code=operation==="create"?201:200;
+    return {code,body:{serverTime:nowIso(this.time()),requestId,auction:this.rowAuction(row),wallet:this.walletFor(ctx)}};
+  }
+  private failedMutation(error:ApiError,requestId:string):Result {
+    return {code:error.status,body:{serverTime:nowIso(this.time()),requestId,
+      error:{code:error.code,message:error.message,requestId}}};
+  }
+  private persistMutation(ctx:Context,operationName:string,key:string,bodyHash:string,requestId:string,result:Result):void {
+    this.execute("INSERT INTO requests(request_id,user_id,operation,idempotency_key,body_hash,status_code,response_json,created_at_ms) VALUES(?,?,?,?,?,?,?,?)",
+      requestId,ctx.userId,operationName,key,bodyHash,result.code,json(result.body),this.time());
+  }
+  private localizeMutation(ctx:Context,result:Result,locale:AuctionLocale):Result {
+    if(result.body.auction&&typeof result.body.auction==="object"){
+      const lot=result.body.auction as {itemId:string;itemName:string};
+      const item=typeof lot.itemId==="string"?(this.formal(ctx)?this.formalCatalog:this.catalog).get(lot.itemId):undefined;
+      if(item)return {code:result.code,body:{...result.body,auction:{...lot,itemName:this.localizedName(item,locale)}}};
+    }
+    return result;
+  }
   mutate(ctx:Context,operation:"create"|"bid"|"buyout"|"cancel",key:unknown,id:string|undefined,body:unknown,
     locale:AuctionLocale=this.fixtures.localization.defaultLocale):Result {
     if (typeof key!=="string" || key.length<16 || key.length>128 ||
@@ -515,46 +549,60 @@ export class AuctionEngine {
     const operationName=(this.formal(ctx)?"formal:":"")+operation+(id?":"+id:"");
     const bodyHash=sha(json(body)+"|"+(this.formal(ctx)?ctx.worldId:""));
     const requestId=randomUUID();
-    const result=this.store.transaction(()=>{
-      const prior=this.one("SELECT * FROM requests WHERE user_id=? AND operation=? AND idempotency_key=?",
-        ctx.userId,operationName,key);
-      if(prior){
-        if(prior.body_hash!==bodyHash)
-          throw new ApiError(409,"IDEMPOTENCY_KEY_CONFLICT","Same key was used with different request data");
-        // Replays read the same canonical persisted operation result.
-        return {code:Number(prior.status_code),body:JSON.parse(String(prior.response_json)) as Record<string,unknown>};
+    let result:Result;
+
+    if(this.store.supportsSqlSavepoints){
+      result=this.store.transaction(()=>{
+        const prior=this.priorMutation(ctx,operationName,key,bodyHash);
+        if(prior)return prior;
+        this.settleExpiredInner(ctx);
+        this.reconcileWorld(ctx);
+        this.store.db.exec("SAVEPOINT mutation");
+        let outcome:Result;
+        try{
+          outcome=this.executeMutation(ctx,operation,id,body,requestId);
+          this.store.db.exec("RELEASE SAVEPOINT mutation");
+        }catch(error){
+          this.store.db.exec("ROLLBACK TO SAVEPOINT mutation");
+          this.store.db.exec("RELEASE SAVEPOINT mutation");
+          if(!(error instanceof ApiError)||error.status>=500)throw error;
+          outcome=this.failedMutation(error,requestId);
+        }
+        this.persistMutation(ctx,operationName,key,bodyHash,requestId,outcome);
+        return outcome;
+      });
+    }else{
+      // SQLite Durable Objects reject SQL SAVEPOINT statements. The object executes
+      // these transactionSync calls synchronously without an await between them:
+      // 1) commit normal expiry/reconciliation, 2) atomically run the requested
+      // mutation, and 3) only on a client error persist its canonical failure receipt.
+      const prior=this.store.transaction(()=>{
+        const existing=this.priorMutation(ctx,operationName,key,bodyHash);
+        if(existing)return existing;
+        this.settleExpiredInner(ctx);
+        this.reconcileWorld(ctx);
+        return null;
+      });
+      if(prior)result=prior;
+      else{
+        try{
+          result=this.store.transaction(()=>{
+            const outcome=this.executeMutation(ctx,operation,id,body,requestId);
+            this.persistMutation(ctx,operationName,key,bodyHash,requestId,outcome);
+            return outcome;
+          });
+        }catch(error){
+          if(!(error instanceof ApiError)||error.status>=500)throw error;
+          result=this.failedMutation(error,requestId);
+          this.store.transaction(()=>{
+            const existing=this.priorMutation(ctx,operationName,key,bodyHash);
+            if(existing){result=existing;return;}
+            this.persistMutation(ctx,operationName,key,bodyHash,requestId,result);
+          });
+        }
       }
-      this.settleExpiredInner(ctx);
-      this.reconcileWorld(ctx);
-      this.store.db.exec("SAVEPOINT mutation");
-      let result:Result;
-      try {
-        let row:DbRow;
-        if(operation==="create")row=this.createListing(ctx,body);
-        else if(operation==="bid")row=this.placeBid(ctx,id!,body);
-        else if(operation==="buyout")row=this.buyout(ctx,id!,body);
-        else row=this.cancel(ctx,id!,body);
-        const code=operation==="create"?201:200;
-        // Store the canonical locale variant, translate below for each HTTP response.
-        result={code,body:{serverTime:nowIso(this.time()),requestId,auction:this.rowAuction(row),wallet:this.walletFor(ctx)}};
-        this.store.db.exec("RELEASE SAVEPOINT mutation");
-      }catch(error){
-        this.store.db.exec("ROLLBACK TO SAVEPOINT mutation");
-        this.store.db.exec("RELEASE SAVEPOINT mutation");
-        if(!(error instanceof ApiError) || error.status>=500)throw error;
-        result={code:error.status,body:{serverTime:nowIso(this.time()),requestId,
-          error:{code:error.code,message:error.message,requestId}}};
-      }
-      this.execute("INSERT INTO requests(request_id,user_id,operation,idempotency_key,body_hash,status_code,response_json,created_at_ms) VALUES(?,?,?,?,?,?,?,?)",
-        requestId,ctx.userId,operationName,key,bodyHash,result.code,json(result.body),this.time());
-      return result;
-    });
-    if(result.body.auction&&typeof result.body.auction==="object"){
-      const lot=result.body.auction as {itemId:string;itemName:string};
-      const item=typeof lot.itemId==="string"?(this.formal(ctx)?this.formalCatalog:this.catalog).get(lot.itemId):undefined;
-      if(item)return {code:result.code,body:{...result.body,auction:{...lot,itemName:this.localizedName(item,locale)}}};
     }
-    return result;
+    return this.localizeMutation(ctx,result,locale);
   }
   request(ctx:Context,id:string,locale:AuctionLocale=this.fixtures.localization.defaultLocale):Record<string,unknown> {
     const row=this.one("SELECT * FROM requests WHERE user_id=? AND request_id=?",ctx.userId,id);

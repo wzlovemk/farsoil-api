@@ -24,6 +24,7 @@ class DurableStatement {
 
 export class DurableSqliteDatabase {
   constructor(storage){
+    this.supportsSqlSavepoints=false;
     this.storage=storage;
     this.sql=storage.sql;
     this.activeTransaction=false;

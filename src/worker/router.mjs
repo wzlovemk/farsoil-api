@@ -383,6 +383,82 @@ export class WorkerApiRouter {
           request.headers.get("idempotency-key"),{...raw,deliveryId:this.part(confirm[1])}));
       }
 
+      const formalContext=(worldId)=>{
+        const identity=this.accountContext(request);
+        if(typeof worldId!=="string")throw new ApiError(422,"INVALID_WORLD","worldId is required");
+        return this.engine.formalAccount(identity.userId,identity.sessionId,worldId);
+      };
+      const formalQuery=()=>formalContext(url.searchParams.get("worldId"));
+      const formalWrite=(operation,id)=>{
+        return (async()=>{
+          const input=await this.body(request);
+          if(!input||typeof input!=="object"||Array.isArray(input))
+            throw new ApiError(422,"INVALID_REQUEST","Formal auction requires a JSON object");
+          const {worldId,...payload}=input;
+          return this.engine.mutate(formalContext(worldId),operation,
+            request.headers.get("idempotency-key"),id,payload,this.locale(request));
+        })();
+      };
+      const demoContext=()=>this.context(request);
+      const queryObject=()=>Object.fromEntries(url.searchParams.entries());
+
+      if(method==="GET"&&path===apiPrefix+"/economy/auction/bootstrap")
+        return this.response(request,this.engine.bootstrap(formalQuery()));
+      if(method==="GET"&&path===apiPrefix+"/economy/auction/listings")
+        return this.response(request,this.engine.listings(formalQuery(),queryObject(),this.locale(request)));
+      const formalDetail=path.match(/^\/api\/v1\/economy\/auction\/listings\/([^/]+)$/);
+      if(method==="GET"&&formalDetail)
+        return this.response(request,this.engine.detail(formalQuery(),this.part(formalDetail[1]),this.locale(request)));
+      if(method==="GET"&&path===apiPrefix+"/economy/auction/sellable-items")
+        return this.response(request,this.engine.sellable(formalQuery(),this.locale(request)));
+      if(method==="GET"&&path===apiPrefix+"/economy/auction/mine")
+        return this.response(request,this.engine.mine(formalQuery(),queryObject(),this.locale(request)));
+      const formalRequest=path.match(/^\/api\/v1\/economy\/auction\/requests\/([^/]+)$/);
+      if(method==="GET"&&formalRequest)
+        return this.response(request,this.engine.request(formalQuery(),this.part(formalRequest[1]),this.locale(request)));
+      if(method==="POST"&&path===apiPrefix+"/economy/auction/listings"){
+        const result=await formalWrite("create");return this.response(request,result.body,result.code);
+      }
+      const formalBid=path.match(/^\/api\/v1\/economy\/auction\/listings\/([^/]+)\/bids$/);
+      if(method==="POST"&&formalBid){
+        const result=await formalWrite("bid",this.part(formalBid[1]));return this.response(request,result.body,result.code);
+      }
+      const formalBuyout=path.match(/^\/api\/v1\/economy\/auction\/listings\/([^/]+)\/buyout$/);
+      if(method==="POST"&&formalBuyout){
+        const result=await formalWrite("buyout",this.part(formalBuyout[1]));return this.response(request,result.body,result.code);
+      }
+      const formalCancel=path.match(/^\/api\/v1\/economy\/auction\/listings\/([^/]+)\/cancel$/);
+      if(method==="POST"&&formalCancel){
+        const result=await formalWrite("cancel",this.part(formalCancel[1]));return this.response(request,result.body,result.code);
+      }
+
+      if(method==="GET"&&path===apiPrefix+"/auction/bootstrap")
+        return this.response(request,this.engine.bootstrap(demoContext()));
+      if(method==="GET"&&path===apiPrefix+"/auction/listings")
+        return this.response(request,this.engine.listings(demoContext(),queryObject(),this.locale(request)));
+      const demoDetail=path.match(/^\/api\/v1\/auction\/listings\/([^/]+)$/);
+      if(method==="GET"&&demoDetail)
+        return this.response(request,this.engine.detail(demoContext(),this.part(demoDetail[1]),this.locale(request)));
+      if(method==="GET"&&path===apiPrefix+"/auction/sellable-items")
+        return this.response(request,this.engine.sellable(demoContext(),this.locale(request)));
+      if(method==="GET"&&path===apiPrefix+"/auction/mine")
+        return this.response(request,this.engine.mine(demoContext(),queryObject(),this.locale(request)));
+      const demoRequest=path.match(/^\/api\/v1\/auction\/requests\/([^/]+)$/);
+      if(method==="GET"&&demoRequest)
+        return this.response(request,this.engine.request(demoContext(),this.part(demoRequest[1]),this.locale(request)));
+      const demoWrite=async(operation,id)=>{
+        const result=this.engine.mutate(demoContext(),operation,request.headers.get("idempotency-key"),
+          id,await this.body(request),this.locale(request));
+        return this.response(request,result.body,result.code);
+      };
+      if(method==="POST"&&path===apiPrefix+"/auction/listings")return demoWrite("create");
+      const demoBid=path.match(/^\/api\/v1\/auction\/listings\/([^/]+)\/bids$/);
+      if(method==="POST"&&demoBid)return demoWrite("bid",this.part(demoBid[1]));
+      const demoBuyout=path.match(/^\/api\/v1\/auction\/listings\/([^/]+)\/buyout$/);
+      if(method==="POST"&&demoBuyout)return demoWrite("buyout",this.part(demoBuyout[1]));
+      const demoCancel=path.match(/^\/api\/v1\/auction\/listings\/([^/]+)\/cancel$/);
+      if(method==="POST"&&demoCancel)return demoWrite("cancel",this.part(demoCancel[1]));
+
       return this.response(request,{
         serverTime:new Date().toISOString(),
         error:{code:"WORKER_ROUTE_NOT_MIGRATED",message:"This API route is not migrated to the Worker runtime yet"}

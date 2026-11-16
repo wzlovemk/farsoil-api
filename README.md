@@ -13,7 +13,7 @@
 - `npm run runtime:node` 永远启动现有 `src/main.ts`。
 - `npm run runtime:worker` 启动 Wrangler + SQLite Durable Object。
 - Worker 已迁移：基础账号、玩家资料、Session 续期/撤销、P15 经济、建筑 G 扣费/确认/反转/退款、重置收费、服务器商品领取。
-- Worker 已迁移 Google/Steam OAuth/OIDC 路由；生产密钥通过 Cloudflare Secrets / Variables 注入，不写入版本库。\n- Worker 已迁移成就、事件批处理与 DROP-01；Node 的 `setInterval` 保持原样，Worker 的 Steam 成就同步使用 Durable Object Alarm。\n- Worker 尚未迁移：Demo/正式拍卖写事务。未迁移路由在 Worker 返回 `WORKER_ROUTE_NOT_MIGRATED`，可随时把本地运行配置切回 `node`。
+- Worker 已迁移 Google/Steam OAuth/OIDC 路由；生产密钥通过 Cloudflare Secrets / Variables 注入，不写入版本库。\n- Worker 已迁移成就、事件批处理与 DROP-01；Node 的 `setInterval` 保持原样，Worker 的 Steam 成就同步使用 Durable Object Alarm。\n- Worker 已迁移 Demo / 正式拍卖查询与写入。Node 继续使用原 SQL Savepoint；SQLite DO 使用同步分段事务保证业务失败回滚后再写幂等错误回执。\n- 当前 V1 HTTP API 已全部具备 Worker 路径；Node 运行时仍完整保留，可随时通过配置切回。
 - Node 与 Worker 复用同一份 `config/*.json` 事实配置和同一套领域类；不复制价格、账号或经济规则。
 
 ## 运行时仓库边界

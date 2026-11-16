@@ -6,6 +6,7 @@ export const AUCTION_SCHEMA_VERSION=17 as const;
 type Row = Record<string, unknown>;
 
 export class AuctionDatabase {
+  readonly supportsSqlSavepoints=true as const;
   readonly db: DatabaseSync;
   private activeTransaction=false;
   /** Prevent lottery/asset entries escaping a single durable server transaction. */
