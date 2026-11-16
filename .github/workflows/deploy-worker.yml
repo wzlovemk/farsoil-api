@@ -1,0 +1,75 @@
+name: Deploy FARSOIL API to Cloudflare
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "config/**"
+      - "*.sql"
+      - "wrangler.jsonc"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: farsoil-api-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Verify production source
+        run: |
+          npm run typecheck
+          npm test
+          npm run worker:dry-run
+
+      - name: Check Cloudflare credentials
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Missing repository secret CLOUDFLARE_API_TOKEN"
+            exit 2
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Missing repository secret CLOUDFLARE_ACCOUNT_ID"
+            exit 2
+          fi
+
+      - name: Deploy Worker
+        run: |
+          npx --yes wrangler@4.162.0 deploy --config wrangler.jsonc \
+            --var FARSOIL_API_RUNTIME:worker \
+            --var AUCTION_CORS_ORIGINS:https://www.farsoil.com,https://play.farsoil.com \
+            --var AUTH_CLIENT_RETURN_ORIGIN:https://play.farsoil.com \
+            2>&1 | tee wrangler-deploy.log
+
+      - name: Show deployed endpoint
+        run: |
+          WORKER_URL=$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' wrangler-deploy.log | tail -1 || true)
+          if [ -n "$WORKER_URL" ]; then
+            echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+            echo "Deployed endpoint: $WORKER_URL"
+            curl --fail --silent --show-error "$WORKER_URL/health"
+          else
+            echo "::warning::Wrangler did not print a workers.dev URL; deployment may use a custom route or workers.dev may be disabled."
+          fi
