@@ -4,6 +4,14 @@
 >
 > 统一服务端 OAuth/OIDC 回调和桌面客户端一次性会话交接已实现并进入代码验证；真实 Google 授权仍需本地私有密钥和浏览器联调。本文件描述当前代码。
 
+## 运行时仓库边界
+
+- `fram-game` 不得 import 本仓库的 `src/`、数据库类或业务实现。
+- 游戏客户端只通过版本化 HTTP API（当前 `/api/v1/*`）以及未来明确的 WebSocket 协议访问服务端。
+- 建筑购买/升级的服务器金币权威由 `/api/v1/economy/buildings/*` 提供；本地施工材料、任务与 Simulation 仍属于游戏客户端 Worker。
+- 跨仓库 E2E 必须启动真实 API 进程并通过 HTTP/WebSocket 验证，不允许通过相对路径把两仓库源码拼成一个运行时。
+- 构建期的一致性脚本可以显式读取另一个仓库的事实文件，但这不构成运行时依赖。
+
 ## 架构边界
 
 - Node.js 22、TypeScript、Fastify、SQLite（支持迁移至独立 PostgreSQL 适配层）。独立部署，**不依赖 Cloudflare API**。
