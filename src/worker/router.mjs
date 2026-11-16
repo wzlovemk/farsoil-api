@@ -17,6 +17,7 @@ export class WorkerApiRouter {
     this.engine=services.engine;
     this.accounts=services.accounts;
     this.economy=services.economy;
+    this.providers=services.providers;
     this.env=env;
     this.schemaVersion=schemaVersion;
     this.rate=new Map();
@@ -35,7 +36,8 @@ export class WorkerApiRouter {
         result.set("access-control-allow-credentials","true");
     }
     for(const [name,value] of Object.entries(headers)){
-      if(value!==undefined&&value!==null)result.append(name,String(value));
+      if(Array.isArray(value)){for(const item of value)result.append(name,String(item));}
+      else if(value!==undefined&&value!==null)result.append(name,String(value));
     }
     if(status===204)return new Response(null,{status,headers:result});
     return new Response(JSON.stringify(body),{status,headers:result});
@@ -147,6 +149,16 @@ export class WorkerApiRouter {
     catch{throw new ApiError(422,"INVALID_REQUEST","Invalid URL component");}
   }
 
+  query(url){
+    return Object.fromEntries(url.searchParams.entries());
+  }
+
+  provider(value){
+    if(value!=="google"&&value!=="steam")
+      throw new ApiError(404,"PROVIDER_NOT_FOUND","Unsupported identity provider");
+    return value;
+  }
+
   async handle(request){
     try{
       this.assertOrigin(request);
@@ -188,6 +200,83 @@ export class WorkerApiRouter {
         this.limit("profile:edit:user:"+ctx.userId,this.accounts.profiles.rules.editLimitPerMinute);
         return this.response(request,this.accounts.profiles.update(ctx.userId,await this.body(request)));
       }
+      if(method==="GET"&&path===apiPrefix+"/auth/start"){
+        this.authLimit(request,"login");
+        const params=this.query(url);
+        let started;
+        if(typeof params.provider==="string"&&params.loginId===undefined){
+          if(params.provider!=="google"&&params.provider!=="steam")
+            throw new ApiError(422,"PROVIDER_INVALID","Unsupported login provider");
+          started=this.providers.begin(params.provider,"login");
+        }else if(typeof params.loginId==="string"&&params.provider===undefined){
+          started=this.engine.store.transaction(()=>{
+            const provider=this.accounts.startDesktopHandoff(params.loginId);
+            return this.providers.begin(provider,"login",undefined,params.loginId);
+          });
+        }else throw new ApiError(422,"INVALID_AUTH_INPUT","Provide provider or desktop loginId");
+        return new Response(null,{status:302,headers:{
+          location:started.authorizeUrl,
+          "set-cookie":this.providers.cookie(started.browserCookie),
+          "cache-control":"no-store",
+          "referrer-policy":"no-referrer"
+        }});
+      }
+      if(method==="POST"&&path===apiPrefix+"/auth/start"){
+        this.authLimit(request,"login");
+        const input=await this.body(request);
+        if(!input||typeof input!=="object"||Array.isArray(input)||
+          Object.keys(input).length!==2||!("provider" in input)||!("clientType" in input))
+          throw new ApiError(422,"INVALID_AUTH_INPUT","Invalid desktop login request");
+        const {provider,clientType}=input;
+        if(clientType!=="desktop"||(provider!=="google"&&provider!=="steam"))
+          throw new ApiError(422,"INVALID_AUTH_INPUT","Unsupported desktop login method");
+        if(!this.providers.enabled(provider))
+          throw new ApiError(503,"PROVIDER_UNAVAILABLE","Provider is not configured");
+        const created=this.accounts.createDesktopHandoff(provider);
+        return this.response(request,{...created,browserUrl:this.providers.desktopStartUrl(provider,created.loginId)},201);
+      }
+      const link=path.match(/^\/api\/v1\/auth\/link\/(google|steam)$/);
+      if(method==="POST"&&link){
+        this.csrfCookie(request);
+        const started=this.providers.begin(this.provider(link[1]),"link",this.accountContext(request));
+        return this.response(request,{
+          serverTime:new Date().toISOString(),authorizationUrl:started.authorizeUrl
+        },200,{"set-cookie":this.providers.cookie(started.browserCookie)});
+      }
+      if(method==="GET"&&path===apiPrefix+"/auth/callback"){
+        const params=this.query(url);
+        const {provider,handoffId}=this.providers.callbackContext(params.state);
+        const cookie=this.providers.browserCookieFrom(request.headers.get("cookie"));
+        if(handoffId){
+          await this.providers.finishHandoff(provider,params,cookie,handoffId);
+          return new Response("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Login completed</title><body><p>Login completed. You can return to the game.</p></body></html>",{
+            status:200,
+            headers:{
+              "content-type":"text/html; charset=utf-8",
+              "content-security-policy":"default-src 'none'; base-uri 'none'; form-action 'none'",
+              "set-cookie":this.providers.clearCookie(),
+              "cache-control":"no-store",
+              "referrer-policy":"no-referrer"
+            }
+          });
+        }
+        const issued=await this.providers.finish(provider,params,cookie);
+        return new Response(null,{status:303,headers:{
+          location:this.providers.frontendReturn(),
+          "set-cookie":[this.setCookie(issued),this.providers.clearCookie()].join(", "),
+          "cache-control":"no-store",
+          "referrer-policy":"no-referrer"
+        }});
+      }
+      if(method==="GET"&&path===apiPrefix+"/auth/status"){
+        this.authLimit(request,"restore");
+        return this.response(request,this.accounts.desktopHandoffStatus(this.query(url).loginId));
+      }
+      if(method==="POST"&&path===apiPrefix+"/auth/complete"){
+        this.authLimit(request,"login");
+        return this.response(request,publicSession(this.accounts.redeemDesktopHandoff(await this.body(request))));
+      }
+
       if(method==="POST"&&path===apiPrefix+"/auth/restore"){
         this.authLimit(request,"restore");this.csrfCookie(request);
         const issued=this.accounts.restore(this.refreshCookie(request));

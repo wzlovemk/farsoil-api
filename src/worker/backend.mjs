@@ -14,7 +14,7 @@ export class FarsoilBackend extends DurableObject {
     this.router=null;
     this.ctx.blockConcurrencyWhile(async()=>{
       this.schemaVersion=initializeWorkerSchema(this.database);
-      this.router=new WorkerApiRouter(createWorkerServices(this.database),env,this.schemaVersion);
+      this.router=new WorkerApiRouter(createWorkerServices(this.database,env),env,this.schemaVersion);
     });
   }
   async fetch(request){
