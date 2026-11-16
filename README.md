@@ -1,6 +1,8 @@
 # FARSOIL API｜账号、经济与拍卖服务
 
-> 本仓库从 `wzlovemk/fram-game/server/auction` 拆分而来。当前阶段仅完成仓库边界拆分，运行时仍保持 Node.js 22 + TypeScript + Fastify + SQLite；迁移 Cloudflare Workers / Durable Objects 属于后续独立阶段，不在本次拆分中改变。\n>\n> 统一服务端 OAuth/OIDC 回调和桌面客户端一次性会话交接已实现并进入代码验证；真实 Google 授权仍需本地私有密钥和浏览器联调。本文件描述当前代码。
+> 本仓库从 `wzlovemk/fram-game/server/auction` 拆分而来。当前阶段仅完成仓库边界拆分，运行时仍保持 Node.js 22 + TypeScript + Fastify + SQLite；迁移 Cloudflare Workers / Durable Objects 属于后续独立阶段，不在本次拆分中改变。
+>
+> 统一服务端 OAuth/OIDC 回调和桌面客户端一次性会话交接已实现并进入代码验证；真实 Google 授权仍需本地私有密钥和浏览器联调。本文件描述当前代码。
 
 ## 架构边界
 
@@ -16,7 +18,6 @@
 服务端独立运行（Node.js ≥22.13）：
 
 ```bash
-cd server/auction
 npm install
 npm run typecheck
 npm test
@@ -99,7 +100,7 @@ npm start
 - 写入：`POST /listings`、`/listings/{id}/bids`、`/listings/{id}/buyout`、`/listings/{id}/cancel`。
 - 写入必须携带唯一 `Idempotency-Key`，竞拍/一口价/撤单必须使用最新 `expectedVersion`，全部资产改变/托管和退货在服务器事务完成。同一意图重复重试不重复扣款/返货。
 - 商品名称搜索、过滤、分类与结果语言使用 `Accept-Language`，商品 ID/库存数量/货币精度保持语言无关。可售商品数量从服务器 `inventories` 按当前 `userId` 读取；当前背包 UI 暂不同步。
-- HTTP 公共 Header、请求 ID、语言、平台由 `src/api/serverRequest.ts` 统一生成；`timestamp`/`nonce`/`deviceFingerprint` 仍按原配置禁用。
+- HTTP 公共 Header、请求 ID、语言、平台由游戏客户端 `wzlovemk/fram-game/src/api/serverRequest.ts` 统一生成；`timestamp`/`nonce`/`deviceFingerprint` 仍按原配置禁用。
 
 ## 迁移与验证
 
