@@ -45,20 +45,32 @@ jobs:
           npm test
           npm run worker:dry-run
 
-      - name: Check Cloudflare credentials
+      - name: Detect Cloudflare credentials
+        id: cloudflare
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::error::Missing repository secret CLOUDFLARE_API_TOKEN"
-            exit 2
-          fi
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Missing repository secret CLOUDFLARE_ACCOUNT_ID"
-            exit 2
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "authenticated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "authenticated=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Cloudflare production credentials are not configured; creating a temporary claimable deployment."
           fi
 
-      - name: Deploy Worker
+      - name: Deploy Worker to Cloudflare account
+        if: steps.cloudflare.outputs.authenticated == 'true'
         run: |
           npx --yes wrangler@4.162.0 deploy --config wrangler.jsonc \
+            --var FARSOIL_API_RUNTIME:worker \
+            --var AUCTION_CORS_ORIGINS:https://www.farsoil.com,https://play.farsoil.com \
+            --var AUTH_CLIENT_RETURN_ORIGIN:https://play.farsoil.com \
+            2>&1 | tee wrangler-deploy.log
+
+      - name: Deploy temporary claimable Worker
+        if: steps.cloudflare.outputs.authenticated != 'true'
+        env:
+          CLOUDFLARE_API_TOKEN:
+          CLOUDFLARE_ACCOUNT_ID:
+        run: |
+          npx --yes wrangler@4.162.0 deploy --temporary --config wrangler.jsonc \
             --var FARSOIL_API_RUNTIME:worker \
             --var AUCTION_CORS_ORIGINS:https://www.farsoil.com,https://play.farsoil.com \
             --var AUTH_CLIENT_RETURN_ORIGIN:https://play.farsoil.com \
