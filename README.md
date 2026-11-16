@@ -61,6 +61,19 @@ npm run runtime:worker
 
 Node 与本地 Worker 默认都监听 `127.0.0.1:3001`，端口来自 `config/runtime.v1.json`。因此 `fram-game` 的本地 API 地址无需随运行时切换。两种运行时健康端点均为 `GET /health`。游戏客户端位于独立仓库 `wzlovemk/fram-game`；其开发/测试客户端默认直接请求该服务器，Vite 的 `/api/v1` 代理仍保留供显式同源模式使用。正式部署要求 HTTPS 并建议同源反向代理。
 
+### Cloudflare 后台 Git 部署
+
+推荐生产部署由 Cloudflare Workers Builds 直接连接本仓库，不再通过 GitHub Actions 二次部署：
+
+- Worker 名称必须为 `farsoil-api`，与 `wrangler.jsonc.name` 一致。
+- Production branch：`main`。
+- Root directory：仓库根目录（留空或 `/`）。
+- Build command：`npm run build`。
+- Deploy command：`npm run worker:deploy`。
+- Runtime Variables / Secrets 在 Worker 的 **Settings > Variables & Secrets** 配置；不要放在 Build variables。
+- `wrangler.jsonc.keep_vars=true`，保留 Cloudflare 后台配置的运行时普通变量；Secrets 本身也不会被普通 deploy 删除。
+- 首次部署先保留 `workers.dev` 地址验证 `GET /health`，再决定是否绑定 `api.farsoil.com` 或通过 `play.farsoil.com/api/v1/*` 路由。
+
 ### Cloudflare Worker 配置
 
 - 本地 Worker 私有变量：复制 `.dev.vars.example` 为 `.dev.vars`。

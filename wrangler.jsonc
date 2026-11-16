@@ -29,5 +29,6 @@
       ],
       "fallthrough": true
     }
-  ]
+  ],
+  "keep_vars": true
 }
