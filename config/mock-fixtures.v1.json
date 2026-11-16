@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "configId": "auction-demo-fixtures-v1",
+  "player": {
+    "startingGold": 12840,
+    "inventory": [
+      {
+        "itemId": "wood",
+        "quantityU": "180"
+      },
+      {
+        "itemId": "steel",
+        "quantityU": "40"
+      },
+      {
+        "itemId": "copper",
+        "quantityU": "36"
+      },
+      {
+        "itemId": "flour",
+        "quantityU": "25"
+      },
+      {
+        "itemId": "fuel",
+        "quantityU": "12.5"
+      }
+    ]
+  },
+  "catalog": [
+    {
+      "itemId": "wood",
+      "category": "resource",
+      "divisible": false,
+      "unitScale": 1,
+      "names": {
+        "zh-CN": "木材",
+        "en-US": "Wood"
+      }
+    },
+    {
+      "itemId": "steel",
+      "category": "material",
+      "divisible": false,
+      "unitScale": 1,
+      "names": {
+        "zh-CN": "钢材",
+        "en-US": "Steel"
+      }
+    },
+    {
+      "itemId": "copper",
+      "category": "material",
+      "divisible": false,
+      "unitScale": 1,
+      "names": {
+        "zh-CN": "铜材",
+        "en-US": "Copper"
+      }
+    },
+    {
+      "itemId": "flour",
+      "category": "food",
+      "divisible": false,
+      "unitScale": 1,
+      "names": {
+        "zh-CN": "面粉",
+        "en-US": "Flour"
+      }
+    },
+    {
+      "itemId": "fuel",
+      "category": "material",
+      "divisible": true,
+      "unitScale": 100,
+      "names": {
+        "zh-CN": "燃料",
+        "en-US": "Fuel"
+      }
+    }
+  ],
+  "npcAccounts": [
+    {
+      "displayName": "星际材料商",
+      "startingGold": 50000,
+      "auctions": [
+        {
+          "itemId": "wood",
+          "quantityU": "100",
+          "startUnitPriceGold": 20,
+          "buyoutPriceGold": 3500,
+          "durationSeconds": 7200
+        },
+        {
+          "itemId": "steel",
+          "quantityU": "20",
+          "startUnitPriceGold": 90,
+          "buyoutPriceGold": 2600,
+          "durationSeconds": 21600
+        }
+      ]
+    },
+    {
+      "displayName": "曙光运输队",
+      "startingGold": 50000,
+      "auctions": [
+        {
+          "itemId": "copper",
+          "quantityU": "40",
+          "startUnitPriceGold": 55,
+          "buyoutPriceGold": null,
+          "durationSeconds": 1800
+        },
+        {
+          "itemId": "fuel",
+          "quantityU": "2.5",
+          "startUnitPriceGold": 200,
+          "buyoutPriceGold": 850,
+          "durationSeconds": 7200
+        }
+      ]
+    }
+  ],
+  "localization": {
+    "defaultLocale": "zh-CN",
+    "supportedLocales": [
+      "zh-CN",
+      "en-US"
+    ],
+    "categories": [
+      {
+        "id": "resource",
+        "names": {
+          "zh-CN": "资源",
+          "en-US": "Resources"
+        }
+      },
+      {
+        "id": "material",
+        "names": {
+          "zh-CN": "材料",
+          "en-US": "Materials"
+        }
+      },
+      {
+        "id": "food",
+        "names": {
+          "zh-CN": "食物",
+          "en-US": "Food"
+        }
+      }
+    ]
+  }
+}

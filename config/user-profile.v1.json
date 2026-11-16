@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "configId": "user-profile-v1",
+  "defaultDisplayName": "Explorer",
+  "minDisplayNameLength": 1,
+  "maxDisplayNameLength": 32,
+  "maxAvatarUrlLength": 2048,
+  "maxEmailLength": 254,
+  "avatarHosts": [
+    "googleusercontent.com",
+    "ggpht.com"
+  ],
+  "editLimitPerMinute": 20
+}

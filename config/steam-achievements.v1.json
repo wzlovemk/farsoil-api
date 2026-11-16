@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "configId": "steam-achievements-v1",
+  "enabled": false,
+  "endpoint": "https://partner.steam-api.com",
+  "pollIntervalMs": 60000,
+  "requestTimeoutMs": 8000,
+  "retryInitialMs": 30000,
+  "retryMaxMs": 21600000,
+  "leaseMs": 45000,
+  "maxJobsPerTick": 16
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "configId": "respec-service-v1",
+  "buildingId": "respec-station",
+  "durationMs": 7200000,
+  "feeGold": 100,
+  "slots": 1
+}

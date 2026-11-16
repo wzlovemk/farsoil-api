@@ -1,0 +1,5849 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Alien Farm Auction V1 account-authenticated Mock API",
+    "version": "1.0.0",
+    "description": "Standalone Node/Fastify/SQLite market: shared listings, persistent server userId-owned wallets and inventory; tokens are revocable opaque account_sessions. Auction listing expiry returns unsold Lots to server inventory. No legacy guest authentication or cloud-save transport. Google and Steam support sign-in/link when configured. This does not grant access to unverified real game assets. ACH-01/02/03: independent server-only achievement config, account-owned exact progress, and once-only aggregate game-event POST. No gameplay bridge or tradable drop issuance. PROFILE-01~06: userId-owned player profiles, trusted provider-verified email records and self-service nickname/avatar editing."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Host configurable independent Node server"
+    }
+  ],
+  "security": [
+    {
+      "BearerSession": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Auction"
+    },
+    {
+      "name": "Achievements"
+    },
+    {
+      "name": "P15 Formal Auction",
+      "description": "World-scoped manufactured inventory and account-wide real G. Demo auctions remain isolated."
+    },
+    {
+      "name": "P15 Server Delivery",
+      "description": "World-owned server goods exit tradable stock into a durable escrow; one-time physical Worker delivery is acknowledged after local Save. Claimed local Save identity is client-attested, not server-verified."
+    }
+  ],
+  "paths": {
+    "/api/v1/auth/renew": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "renewSession",
+        "responses": {
+          "200": {
+            "description": "Rotated session access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Rotate an active account access token; use AccountSession only. Expiration/revocation never deletes permanent userId."
+      }
+    },
+    "/api/v1/auth/revoke": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "revokeSession",
+        "responses": {
+          "204": {
+            "description": "Session revoked"
+          },
+          "401": {
+            "description": "Invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Revoke current account_sessions identity and erase refresh cookie. Does not remove account, wallet or listing history."
+      }
+    },
+    "/api/v1/auction/bootstrap": {
+      "get": {
+        "operationId": "getAuctionBootstrap",
+        "parameters": [
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bootstrap"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auction/listings": {
+      "post": {
+        "operationId": "createAuction",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateListing"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only."
+      },
+      "get": {
+        "operationId": "listAuctions",
+        "description": "Filter by localized product name in language selected by Accept-Language, sort, and page the server-owned active auctions. Server replies with localized itemName and categories; itemId stays stable.",
+        "parameters": [
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "zh-CN or en-US; regional forms, weighted preferences and fallback supported."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "endingSoon",
+                "newest",
+                "priceAsc",
+                "priceDesc"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Localized active auctions and server-defined category labels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter or pagination",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auction/listings/{id}": {
+      "get": {
+        "operationId": "getAuctionDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Auction itemName is localized to the resolved language, while auctionId/itemId remain canonical."
+      }
+    },
+    "/api/v1/auction/sellable-items": {
+      "get": {
+        "operationId": "listMockSellableItems",
+        "parameters": [
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SellableItems"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Sellable item name is localized using the same server catalog."
+      }
+    },
+    "/api/v1/auction/mine": {
+      "get": {
+        "operationId": "getMyAuctions",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "listings",
+                "bids",
+                "ended"
+              ]
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mine"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "User-owned auction itemName is localized; ownership remains the stable userId."
+      }
+    },
+    "/api/v1/auction/listings/{id}/bids": {
+      "post": {
+        "operationId": "placeBid",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceBid"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only."
+      }
+    },
+    "/api/v1/auction/listings/{id}/buyout": {
+      "post": {
+        "operationId": "buyoutAuction",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only."
+      }
+    },
+    "/api/v1/auction/listings/{id}/cancel": {
+      "post": {
+        "operationId": "cancelAuction",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only."
+      }
+    },
+    "/api/v1/auction/requests/{id}": {
+      "get": {
+        "operationId": "getMyMutationResult",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Idempotency result is persisted independent of language; localized names are projected for this request."
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "registerAccount",
+        "security": [],
+        "summary": "Explicit unverified email/password registration",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCredentials"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New durable account and access token",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Secure HttpOnly __Host-sbf_refresh with Path=/ and SameSite=Lax",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSession"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "loginAccount",
+        "security": [],
+        "summary": "Existing email/password account sign-in; never auto-register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCredentials"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed-in account",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Secure HttpOnly __Host-sbf_refresh with Path=/ and SameSite=Lax",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/enter": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "enterAccount",
+        "security": [],
+        "summary": "Unified email/password entry: register an unclaimed email or authenticate existing password credentials",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCredentials"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated account (existing or atomically created)",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Secure HttpOnly __Host-sbf_refresh with Path=/ and SameSite=Lax",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid email, password or request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Always returns the same 200 AccountSession shape. Provider-only emails and disabled accounts cannot gain password access. Concurrent registration conflicts retry normal password verification. Shares both login and registration IP/email limits."
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "currentAccount",
+        "responses": {
+          "200": {
+            "description": "Current durable account identity",
+            "headers": {},
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/restore": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "restoreAccountSession",
+        "security": [],
+        "summary": "Restore signed-in account from rotating HttpOnly refresh cookie",
+        "description": "Requires __Host-sbf_refresh Cookie, X-SBF-Auth: v1 and trusted Origin/Fetch Metadata; refresh token never appears in JSON. Cookie only accepted via reviewed credentials mode.",
+        "parameters": [
+          {
+            "name": "X-SBF-Auth",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "v1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New access token, new refresh cookie",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Secure HttpOnly __Host-sbf_refresh with Path=/ and SameSite=Lax",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, replayed or expired refresh cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Cross-site request forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/link/{provider}": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "linkExternalProvider",
+        "description": "Explicit link requires current Bearer account; sets browser-bound challenge cookie. Once verified, account userId remains unchanged. Conflicts cannot merge accounts.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google",
+                "steam"
+              ]
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-SBF-Auth",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "v1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trusted OAuth redirect URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "serverTime": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "authorizationUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No session / CSRF protection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already linked to another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Provider disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password/setup": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "setupEmailPassword",
+        "description": "Recently authenticated third-party account links a unique unverified email/password. Never merges accounts by matching emails.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCredentials"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password credential added"
+          },
+          "403": {
+            "description": "Re-authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already owned or password exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password/change": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "changeEmailPassword",
+        "description": "Recently authenticated account verifies the current password then changes credential, revoking other account sessions.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "oldPassword",
+                  "newPassword"
+                ],
+                "properties": {
+                  "oldPassword": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "writeOnly": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password updated"
+          },
+          "401": {
+            "description": "Current password incorrect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Re-authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/achievements/catalog": {
+      "get": {
+        "tags": [
+          "Achievements"
+        ],
+        "operationId": "listAchievementCatalog",
+        "summary": "Read server-owned, locale-projected achievement catalog (hidden conditions stay private)",
+        "responses": {
+          "200": {
+            "description": "Public player-visible achievement catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired account Session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/achievements/me": {
+      "get": {
+        "tags": [
+          "Achievements"
+        ],
+        "operationId": "getMyAchievements",
+        "summary": "Read server-authoritative account achievement progress",
+        "responses": {
+          "200": {
+            "description": "Achievements for the authenticated permanent userId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementMyProgress"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid account Session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/achievements/summary": {
+      "get": {
+        "tags": [
+          "Achievements"
+        ],
+        "operationId": "getAchievementSummary",
+        "summary": "Read account and category unlocked counts",
+        "responses": {
+          "200": {
+            "description": "Account summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid account Session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/game-events/batch": {
+      "post": {
+        "tags": [
+          "Achievements"
+        ],
+        "operationId": "submitAggregatedGameEvents",
+        "summary": "Submit memory-aggregated gameplay facts; no client replay or tradable asset issuance",
+        "description": "Authenticated by Session with permanent server-derived userId. Client-completed actions may trigger server-side configurable item lotteries; the server does not verify actual farming/mining, by explicit product choice. Aggregates preserve sourceActionIds and per-source categories. One player action is one independent trial per matching reward rule, regardless of amount U or number of field cells. One account-wide server-clock cooldown starts only when any rule wins (default 86400 seconds, configurable/disableable); actions skipped during cooldown are permanently marked, not delayed. Independent rules in the same action can win together. Winning items are created by the server in the existing trade station inventory atomically with lottery and cooldown receipts, without auto-listing. Client cannot specify prize, probability or win result. Offline failures are never retried; auction.sold is internal server-only.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AchievementEventBatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-event accepted/duplicate/rejected results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementEventBatchResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing Session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Batch key reused with changed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Event JSON exceeds server batch limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid batch envelope or invalid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/profile": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "getMyPlayerProfile",
+        "summary": "Account-owned nickname and avatar, never an authentication credential",
+        "responses": {
+          "200": {
+            "description": "Current user profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "updateMyPlayerProfile",
+        "summary": "Edit only current account nickname or approved avatar source",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerProfilePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/start": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "beginProviderAuthorization",
+        "summary": "Unified independent-server Google/Steam authorization start",
+        "security": [],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google",
+                "steam"
+              ]
+            }
+          },
+          {
+            "name": "loginId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the selected trusted provider"
+          },
+          "422": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "beginDesktopAuthorization",
+        "summary": "Create one-time native client browser handoff",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "clientType"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "google",
+                      "steam"
+                    ]
+                  },
+                  "clientType": {
+                    "type": "string",
+                    "enum": [
+                      "desktop"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "One-time native browser challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "loginId",
+                    "clientSecret",
+                    "browserUrl",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "loginId": {
+                      "type": "string"
+                    },
+                    "clientSecret": {
+                      "type": "string",
+                      "writeOnly": true
+                    },
+                    "browserUrl": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/callback": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "finishProviderAuthorization",
+        "summary": "Unified callback uses persisted state to identify Google or Steam and verify provider assertion",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Browser confirmation for native client; no game token in HTML"
+          },
+          "303": {
+            "description": "Browser receives HttpOnly refresh cookie and clean redirect to configured front end"
+          },
+          "401": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/status": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "desktopAuthorizationStatus",
+        "security": [],
+        "summary": "Check native browser authorization progress without returning identity or session",
+        "parameters": [
+          {
+            "name": "loginId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "pending, ready, consumed or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "ready",
+                        "consumed",
+                        "expired"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/complete": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "completeDesktopAuthorization",
+        "security": [],
+        "summary": "Once-only native session redemption using client-only secret proof",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "loginId",
+                  "clientSecret"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "loginId": {
+                    "type": "string"
+                  },
+                  "clientSecret": {
+                    "type": "string",
+                    "writeOnly": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New account access session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unavailable session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/economy/auction/bootstrap": {
+      "get": {
+        "operationId": "formalGetAuctionBootstrap",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            },
+            "description": "Current world for inventory, sellable-items and buyer destination; global listings remain browsable."
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalBootstrap"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "P15 Formal Auction"
+        ],
+        "description": " Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential."
+      }
+    },
+    "/api/v1/economy/auction/listings": {
+      "post": {
+        "operationId": "formalCreateAuction",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormalCreateListing"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalMutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      },
+      "get": {
+        "operationId": "formalListAuctions",
+        "description": "Filter by localized product name in language selected by Accept-Language, sort, and page the server-owned active auctions. Server replies with localized itemName and categories; itemId stays stable. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            },
+            "description": "Current world for inventory, sellable-items and buyer destination; global listings remain browsable."
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "zh-CN or en-US; regional forms, weighted preferences and fallback supported."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "endingSoon",
+                "newest",
+                "priceAsc",
+                "priceDesc"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Localized active auctions and server-defined category labels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalAuctionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter or pagination",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/auction/listings/{id}": {
+      "get": {
+        "operationId": "formalGetAuctionDetail",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            },
+            "description": "Current world for inventory, sellable-items and buyer destination; global listings remain browsable."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalAuctionDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Auction itemName is localized to the resolved language, while auctionId/itemId remain canonical. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/auction/sellable-items": {
+      "get": {
+        "operationId": "formalListMockSellableItems",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            },
+            "description": "Current world for inventory, sellable-items and buyer destination; global listings remain browsable."
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SellableItems"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Sellable item name is localized using the same server catalog. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/auction/mine": {
+      "get": {
+        "operationId": "formalGetMyAuctions",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            },
+            "description": "Current world for inventory, sellable-items and buyer destination; global listings remain browsable."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "listings",
+                "bids",
+                "ended"
+              ]
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalMine"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "User-owned auction itemName is localized; ownership remains the stable userId. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/auction/requests/{id}": {
+      "get": {
+        "operationId": "formalGetMyMutationResult",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            },
+            "description": "Current world for inventory, sellable-items and buyer destination; global listings remain browsable."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalRequestResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Idempotency result is persisted independent of language; localized names are projected for this request. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/auction/listings/{id}/bids": {
+      "post": {
+        "operationId": "formalPlaceBid",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormalPlaceBid"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalMutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/auction/listings/{id}/buyout": {
+      "post": {
+        "operationId": "formalBuyoutAuction",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormalExpectedVersion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalMutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/auction/listings/{id}/cancel": {
+      "post": {
+        "operationId": "formalCancelAuction",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "description": "Stable for retries of one intended mutation. Scoped to authenticated demo session and operation."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Accept-Language",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Requested catalog display/search language; BCP47 preferences supported, unsupported languages fall back to server catalog default. Does not authorize any account or transaction."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormalExpectedVersion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormalMutationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session missing or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business, version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "description": "Server persists language-neutral business identity, idempotency and money; localized item names are response-only. Formal P15 manufactured goods only; authenticated userId owns a shared real-G wallet. worldId binds seller source or buyer destination; not a client-attested building credential.",
+        "tags": [
+          "P15 Formal Auction"
+        ]
+      }
+    },
+    "/api/v1/economy/worlds/{worldId}/deliveries": {
+      "get": {
+        "tags": [
+          "P15 Server Delivery"
+        ],
+        "operationId": "getP15WorldDeliveryStatus",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            }
+          }
+        ],
+        "description": "Return latest CONFIRMED delivery sequence as the minimum allowed watermark for local Save recovery, plus any single pending delivery reservation.",
+        "responses": {
+          "200": {
+            "description": "Authenticated world-owned server delivery status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P15DeliveryStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid world ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/economy/deliveries": {
+      "post": {
+        "tags": [
+          "P15 Server Delivery"
+        ],
+        "operationId": "prepareP15WorldDelivery",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ],
+        "description": "Subtract allowed server-manufactured stock atomically and reserve one PENDING lot per userId+worldId. Retry the SAME key after ambiguous network outcome. No client claim can issue additional server stock.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/P15PrepareDelivery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated world-owned server delivery status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P15DeliveryReceipt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pending delivery or insufficient server goods",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid item, quantity or idempotency key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/economy/deliveries/{id}/confirm": {
+      "post": {
+        "tags": [
+          "P15 Server Delivery"
+        ],
+        "operationId": "confirmP15WorldDelivery",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ],
+        "description": "Marks a PENDING delivery CONFIRMED after client-reported committed Save. The authenticated account and world must own this delivery. Does not automatically issue goods in Worker; never claims server verification of local IndexedDB Save. Confirmed sequence blocks older local save recoveries.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/P15ConfirmDelivery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated world-owned server delivery status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P15DeliveryReceipt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Delivery not found for authenticated world",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already confirmed with different Save",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid Save ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerSession": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Opaque Session Token",
+        "description": "Opaque Session Token maps to server-verified userId. Neither client-supplied userId nor sessionId authorizes business data access."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "latestVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "serverTime"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Wallet": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "totalGold",
+          "reservedGold",
+          "availableGold"
+        ],
+        "properties": {
+          "totalGold": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reservedGold": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "availableGold": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "Rules": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "minBidIncrementGold",
+          "durationSeconds",
+          "feesGold",
+          "allowBuyout",
+          "wholeLotOnly",
+          "listingQuery"
+        ],
+        "properties": {
+          "minBidIncrementGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "durationSeconds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "allowBuyout": {
+            "type": "boolean"
+          },
+          "wholeLotOnly": {
+            "type": "boolean"
+          },
+          "feesGold": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "listing",
+              "bidding",
+              "settlement",
+              "cancellation"
+            ],
+            "properties": {
+              "listing": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "bidding": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "settlement": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cancellation": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "listingQuery": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "maxSearchCharacters",
+              "maxCategoryCharacters"
+            ],
+            "properties": {
+              "maxSearchCharacters": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Server-configured maximum search string length for the current catalog"
+              },
+              "maxCategoryCharacters": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Server-configured category filter length"
+              }
+            }
+          }
+        }
+      },
+      "Auction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "auctionId",
+          "itemId",
+          "itemName",
+          "quantityU",
+          "sellerUserId",
+          "startUnitPriceGold",
+          "startPriceGold",
+          "highestBidGold",
+          "bidCount",
+          "buyoutPriceGold",
+          "createdAt",
+          "expiresAt",
+          "status",
+          "version",
+          "category"
+        ],
+        "properties": {
+          "auctionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "itemName": {
+            "type": "string",
+            "description": "Server-localized catalog name selected by Accept-Language."
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "startUnitPriceGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "startPriceGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "highestBidGold": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Gold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bidCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "buyoutPriceGold": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Gold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AuctionStatus"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "sellerUserId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "type": "string",
+            "description": "Stable category ID for client-side grouping; localized category names are returned by GET listings."
+          }
+        }
+      },
+      "AuctionStatus": {
+        "type": "string",
+        "enum": [
+          "OPEN",
+          "SOLD",
+          "EXPIRED",
+          "CANCELLED"
+        ]
+      },
+      "Gold": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "Bootstrap": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "marketScope",
+          "userId",
+          "wallet",
+          "rules",
+          "counts"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "marketScope": {
+            "type": "string",
+            "const": "demo"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/Wallet"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/Rules"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "listings",
+              "bids",
+              "ended"
+            ],
+            "properties": {
+              "listings": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "bids": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "ended": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "Page": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "AuctionList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "items",
+          "page",
+          "language",
+          "categories"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Auction"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "language": {
+            "type": "string",
+            "description": "Resolved by the server from configured catalog language tags and the client's Accept-Language"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuctionCategory"
+            }
+          }
+        }
+      },
+      "AuctionDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "auction"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "auction": {
+            "$ref": "#/components/schemas/Auction"
+          }
+        }
+      },
+      "SellableItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "name",
+          "quantityU",
+          "divisible",
+          "unitScale",
+          "eligible"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "divisible": {
+            "type": "boolean"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "unitScale": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Authoritative catalog quantity precision scale"
+          }
+        }
+      },
+      "SellableItems": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "items"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SellableItem"
+            }
+          }
+        }
+      },
+      "BidRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "auctionId",
+          "myBidGold",
+          "status",
+          "reservedGold",
+          "createdAt",
+          "itemId",
+          "itemName",
+          "quantityU"
+        ],
+        "properties": {
+          "auctionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "myBidGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "LEADING",
+              "OUTBID",
+              "WON",
+              "LOST"
+            ]
+          },
+          "reservedGold": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "itemName": {
+            "type": "string"
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          }
+        }
+      },
+      "EndedRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "auctionId",
+          "status",
+          "settledPriceGold",
+          "completedAt",
+          "itemId",
+          "itemName",
+          "quantityU",
+          "isSeller",
+          "won"
+        ],
+        "properties": {
+          "auctionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/AuctionStatus"
+          },
+          "settledPriceGold": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Gold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "itemName": {
+            "type": "string"
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "isSeller": {
+            "type": "boolean"
+          },
+          "won": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Mine": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "view",
+          "page",
+          "listings",
+          "bids",
+          "ended"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "listings",
+              "bids",
+              "ended"
+            ]
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "listings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Auction"
+            }
+          },
+          "bids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BidRecord"
+            }
+          },
+          "ended": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EndedRecord"
+            }
+          }
+        }
+      },
+      "CreateListing": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "quantityU",
+          "startUnitPriceGold",
+          "durationSeconds"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "startUnitPriceGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "buyoutPriceGold": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Gold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PlaceBid": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bidGold",
+          "expectedVersion"
+        ],
+        "properties": {
+          "bidGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "ExpectedVersion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "MutationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "requestId",
+          "auction",
+          "wallet"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "auction": {
+            "$ref": "#/components/schemas/Auction"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/Wallet"
+          }
+        }
+      },
+      "RequestResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "requestId",
+          "state"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "FAILED"
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/MutationResult"
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        }
+      },
+      "AuctionCategory": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "Localized category name for requested language"
+          }
+        }
+      },
+      "AccountCredentials": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          }
+        }
+      },
+      "AccountSession": {
+        "type": "object",
+        "required": [
+          "userId",
+          "sessionId",
+          "token",
+          "expiresAt",
+          "scope",
+          "serverTime"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "Short-lived opaque access token; never store in URL or persistent browser storage"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scope": {
+            "type": "string",
+            "const": "account:basic"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AccountProfile": {
+        "type": "object",
+        "required": [
+          "userId",
+          "email",
+          "emailVerified",
+          "providers",
+          "serverTime",
+          "hasPassword",
+          "emailSource",
+          "emailConflict",
+          "passwordLoginEmail"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "emailSource": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Provenance of primary email; not a login method"
+          },
+          "emailConflict": {
+            "type": "boolean",
+            "description": "Provider verified email conflicts with a different userId; address not revealed"
+          },
+          "passwordLoginEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Actual password-login identifier, independent of primary verified account email"
+          }
+        }
+      },
+      "AchievementCatalog": {
+        "type": "object",
+        "required": [
+          "configId",
+          "locale",
+          "categories",
+          "achievements"
+        ],
+        "properties": {
+          "configId": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "achievements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "category",
+                "hidden"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "iconAssetId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AchievementMyProgress": {
+        "type": "object",
+        "required": [
+          "configId",
+          "locale",
+          "achievements"
+        ],
+        "properties": {
+          "configId": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "achievements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "category",
+                "hidden",
+                "unlocked",
+                "unlockedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "unlocked": {
+                  "type": "boolean"
+                },
+                "unlockedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "iconAssetId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "progress": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AchievementSummary": {
+        "type": "object",
+        "required": [
+          "configId",
+          "total",
+          "unlocked",
+          "categories"
+        ],
+        "properties": {
+          "configId": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unlocked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "total",
+                "unlocked"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unlocked": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AchievementEventAggregate": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "type",
+          "data"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "type": {
+            "type": "string",
+            "description": "Must be a clientEventTypes entry in the server achievement config"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "count",
+              "sourceOperationIds"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sourceOperationIds": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "operation": {
+                "type": "string"
+              },
+              "byCrop": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "outputs": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "byBuilding": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "missionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "regionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "byItem": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "byTaskCategory": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "source": {
+                "type": "string"
+              },
+              "sourceActionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "description": "Positionally parallel to sourceOperationIds; repeated values denote multiple child completions of one user operation. Client-provided identity, not proof of gameplay."
+              },
+              "sourceDetails": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "cropId": {
+                      "type": "string"
+                    },
+                    "itemIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    },
+                    "buildingTypeId": {
+                      "type": "string"
+                    },
+                    "missionId": {
+                      "type": "string"
+                    },
+                    "regionId": {
+                      "type": "string"
+                    },
+                    "taskCategory": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "description": "Positional per-completion category facts for matching server drop rules; count must equal sourceOperationIds. Server does not verify actual game-world resources."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Event type selects stricter required fields and count/quantity cross-checks. Exact U uses decimal strings."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AchievementEventBatch": {
+        "type": "object",
+        "required": [
+          "worldId",
+          "events"
+        ],
+        "properties": {
+          "worldId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/AchievementEventAggregate"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AchievementEventBatchResult": {
+        "type": "object",
+        "required": [
+          "serverTime",
+          "results"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "eventId",
+                "status"
+              ],
+              "properties": {
+                "eventId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ACCEPTED",
+                    "DUPLICATE",
+                    "REJECTED_PERMANENT"
+                  ]
+                },
+                "code": {
+                  "type": "string"
+                },
+                "unlocked": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "awards": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "itemId",
+                      "quantityU"
+                    ],
+                    "properties": {
+                      "itemId": {
+                        "type": "string"
+                      },
+                      "quantityU": {
+                        "type": "string",
+                        "description": "Positive decimal U issued into existing server trade inventory"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "description": "New prizes actually issued in the accepted event; omitted for duplicates or cooldown skips."
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlayerProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "userId",
+          "displayName",
+          "nameSource",
+          "avatarSource",
+          "avatarUrl",
+          "hasGoogleAvatar",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "nameSource": {
+            "type": "string",
+            "enum": [
+              "default",
+              "google",
+              "player"
+            ]
+          },
+          "avatarSource": {
+            "type": "string",
+            "enum": [
+              "default",
+              "google"
+            ]
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "HTTPS allowlisted Google picture, if provided"
+          },
+          "hasGoogleAvatar": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PlayerProfilePatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "avatarSource": {
+            "type": "string",
+            "enum": [
+              "default",
+              "google"
+            ]
+          }
+        }
+      },
+      "DropCooldown": {
+        "type": "object",
+        "description": "Server-configured, account-wide winning cooldown; no per-hour draw quota.",
+        "required": [
+          "enabled",
+          "seconds"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 86400
+          }
+        },
+        "additionalProperties": false
+      },
+      "FormalAuction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "auctionId",
+          "itemId",
+          "itemName",
+          "quantityU",
+          "sellerUserId",
+          "startUnitPriceGold",
+          "startPriceGold",
+          "highestBidGold",
+          "bidCount",
+          "buyoutPriceGold",
+          "createdAt",
+          "expiresAt",
+          "status",
+          "version",
+          "category",
+          "sellerWorldId",
+          "buyerWorldId"
+        ],
+        "properties": {
+          "auctionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "itemName": {
+            "type": "string",
+            "description": "Server-localized catalog name selected by Accept-Language."
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "startUnitPriceGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "startPriceGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "highestBidGold": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Gold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bidCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "buyoutPriceGold": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Gold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AuctionStatus"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "sellerUserId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "type": "string",
+            "description": "Stable category ID for client-side grouping; localized category names are returned by GET listings."
+          },
+          "sellerWorldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          },
+          "buyerWorldId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 180,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "FormalBootstrap": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "marketScope",
+          "userId",
+          "wallet",
+          "rules",
+          "counts",
+          "worldId"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "marketScope": {
+            "type": "string",
+            "const": "formal"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/Wallet"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/Rules"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "listings",
+              "bids",
+              "ended"
+            ],
+            "properties": {
+              "listings": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "bids": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "ended": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          }
+        }
+      },
+      "FormalAuctionList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "items",
+          "page",
+          "language",
+          "categories"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormalAuction"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "language": {
+            "type": "string",
+            "description": "Resolved by the server from configured catalog language tags and the client's Accept-Language"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuctionCategory"
+            }
+          }
+        }
+      },
+      "FormalAuctionDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "auction"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "auction": {
+            "$ref": "#/components/schemas/FormalAuction"
+          }
+        }
+      },
+      "FormalMine": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "view",
+          "page",
+          "listings",
+          "bids",
+          "ended"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "listings",
+              "bids",
+              "ended"
+            ]
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "listings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormalAuction"
+            }
+          },
+          "bids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BidRecord"
+            }
+          },
+          "ended": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EndedRecord"
+            }
+          }
+        }
+      },
+      "FormalMutationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "requestId",
+          "auction",
+          "wallet"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "auction": {
+            "$ref": "#/components/schemas/FormalAuction"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/Wallet"
+          }
+        }
+      },
+      "FormalRequestResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "requestId",
+          "state"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "FAILED"
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/FormalMutationResult"
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        }
+      },
+      "FormalCreateListing": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "quantityU",
+          "startUnitPriceGold",
+          "durationSeconds",
+          "worldId"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "startUnitPriceGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "buyoutPriceGold": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Gold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          }
+        }
+      },
+      "FormalPlaceBid": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bidGold",
+          "expectedVersion",
+          "worldId"
+        ],
+        "properties": {
+          "bidGold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          }
+        }
+      },
+      "FormalExpectedVersion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "worldId"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          }
+        }
+      },
+      "P15DeliveryPending": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "deliveryId",
+          "sequence",
+          "itemId",
+          "quantityU",
+          "status",
+          "createdAt"
+        ],
+        "properties": {
+          "deliveryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "status": {
+            "type": "string",
+            "const": "PENDING"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "P15DeliveryStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "worldId",
+          "minimumSequence",
+          "maxQuantityU",
+          "pending"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          },
+          "minimumSequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxQuantityU": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "pending": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/P15DeliveryPending"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "P15PrepareDelivery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "worldId",
+          "itemId",
+          "quantityU"
+        ],
+        "properties": {
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          }
+        }
+      },
+      "P15ConfirmDelivery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "worldId",
+          "localSaveId"
+        ],
+        "properties": {
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          },
+          "localSaveId": {
+            "type": "string",
+            "pattern": "^save:[A-Za-z0-9-]{20,100}$"
+          }
+        }
+      },
+      "P15DeliveryReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverTime",
+          "worldId",
+          "deliveryId",
+          "sequence",
+          "itemId",
+          "quantityU",
+          "status"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          },
+          "deliveryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantityU": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "CONFIRMED"
+            ]
+          },
+          "localSaveId": {
+            "type": "string",
+            "pattern": "^save:[A-Za-z0-9-]{20,100}$"
+          },
+          "readyAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}
