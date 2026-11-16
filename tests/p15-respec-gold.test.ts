@@ -71,7 +71,7 @@ test("one stable service charges account G once and records exactly one financia
     assert.equal((f.db.db.prepare("SELECT p15_gold FROM wallets WHERE user_id=?").get(a.userId) as {p15_gold:number}).p15_gold,201);
     const records=f.db.db.prepare("SELECT operation,item_id,gold_delta FROM p15_finance_records WHERE user_id=?").all(a.userId) as
       {operation:string;item_id:string;gold_delta:number}[];
-    assert.deepEqual(records,[{operation:"SKILL_RESPEC",item_id:RESPEC_SERVER_CONFIG.buildingId,gold_delta:-100}]);
+    assert.deepEqual(records.map(row=>({...row})),[{operation:"SKILL_RESPEC",item_id:RESPEC_SERVER_CONFIG.buildingId,gold_delta:-100}]);
     assert.equal((f.db.db.prepare("SELECT COUNT(*) AS total FROM p15_respec_charges WHERE user_id=?").get(a.userId) as {total:number}).total,1);
   }finally{await f.close();}
 });
