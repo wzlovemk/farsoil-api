@@ -4,6 +4,18 @@
 >
 > 统一服务端 OAuth/OIDC 回调和桌面客户端一次性会话交接已实现并进入代码验证；真实 Google 授权仍需本地私有密钥和浏览器联调。本文件描述当前代码。
 
+## Node / Worker 双运行时
+
+当前迁移采用并行运行，不删除现有 Node/Fastify/SQLite 实现：
+
+- `config/runtime.v1.json.localRuntime` 决定本地 `npm run runtime` 默认启动 `node` 或 `worker`。
+- `FARSOIL_API_RUNTIME=node|worker` 可临时覆盖配置，不修改版本化配置文件。
+- `npm run runtime:node` 永远启动现有 `src/main.ts`。
+- `npm run runtime:worker` 启动 Wrangler + SQLite Durable Object。
+- Worker 已迁移：基础账号、玩家资料、Session 续期/撤销、P15 经济、建筑 G 扣费/确认/反转/退款、重置收费、服务器商品领取。
+- Worker 尚未迁移：Google/Steam OAuth、成就/掉落、Demo/正式拍卖写事务。未迁移路由在 Worker 返回 `WORKER_ROUTE_NOT_MIGRATED`，可随时把本地运行配置切回 `node`。
+- Node 与 Worker 复用同一份 `config/*.json` 事实配置和同一套领域类；不复制价格、账号或经济规则。
+
 ## 运行时仓库边界
 
 - `fram-game` 不得 import 本仓库的 `src/`、数据库类或业务实现。

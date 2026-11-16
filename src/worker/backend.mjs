@@ -1,16 +1,8 @@
 import {DurableObject} from "cloudflare:workers";
 import {DurableSqliteDatabase} from "./sqliteDatabase.mjs";
 import {initializeWorkerSchema} from "./migrations.mjs";
-
-const json=(body,status=200)=>new Response(JSON.stringify(body),{
-  status,
-  headers:{
-    "content-type":"application/json; charset=utf-8",
-    "cache-control":"no-store",
-    "x-content-type-options":"nosniff",
-    "referrer-policy":"no-referrer"
-  }
-});
+import {createWorkerServices} from "./services.mjs";
+import {WorkerApiRouter} from "./router.mjs";
 
 export class FarsoilBackend extends DurableObject {
   constructor(ctx,env){
@@ -19,29 +11,14 @@ export class FarsoilBackend extends DurableObject {
     this.env=env;
     this.database=new DurableSqliteDatabase(ctx.storage);
     this.schemaVersion=0;
+    this.router=null;
     this.ctx.blockConcurrencyWhile(async()=>{
       this.schemaVersion=initializeWorkerSchema(this.database);
+      this.router=new WorkerApiRouter(createWorkerServices(this.database),env,this.schemaVersion);
     });
   }
-
   async fetch(request){
-    const url=new URL(request.url);
-    if(url.pathname==="/health"){
-      return json({
-        status:"ok",
-        service:"farsoil-api",
-        runtime:"worker",
-        storage:"durable-object-sqlite",
-        schemaVersion:this.schemaVersion,
-        migrationPhase:"database"
-      });
-    }
-    return json({
-      serverTime:new Date().toISOString(),
-      error:{
-        code:"WORKER_ROUTE_NOT_MIGRATED",
-        message:"This API route is not migrated to the Worker runtime yet"
-      }
-    },503);
+    if(!this.router)throw new Error("FARSOIL Worker services are not initialized");
+    return this.router.handle(request);
   }
 }
