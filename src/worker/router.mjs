@@ -261,12 +261,14 @@ export class WorkerApiRouter {
           });
         }
         const issued=await this.providers.finish(provider,params,cookie);
-        return new Response(null,{status:303,headers:{
+        const headers=new Headers({
           location:this.providers.frontendReturn(),
-          "set-cookie":[this.setCookie(issued),this.providers.clearCookie()].join(", "),
           "cache-control":"no-store",
           "referrer-policy":"no-referrer"
-        }});
+        });
+        headers.append("set-cookie",this.setCookie(issued));
+        headers.append("set-cookie",this.providers.clearCookie());
+        return new Response(null,{status:303,headers});
       }
       if(method==="GET"&&path===apiPrefix+"/auth/status"){
         this.authLimit(request,"restore");
