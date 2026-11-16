@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "configId": "p15-economy-node1",
+  "status": "PROVISIONAL_NOT_BALANCED",
+  "quantityUnit": "U",
+  "timeUnit": "real-seconds",
+  "catalog": [
+    {
+      "itemId": "steel",
+      "name": "钢材",
+      "names": { "zh-CN": "钢材", "en-US": "Steel" },
+      "unitScale": 1,
+      "buybackGoldPerU": 35,
+      "category": "material"
+    },
+    {
+      "itemId": "mineral-byproduct",
+      "name": "矿物副产物",
+      "names": { "zh-CN": "矿物副产物", "en-US": "Mineral Byproduct" },
+      "unitScale": 1,
+      "buybackGoldPerU": 1,
+      "category": "material"
+    },
+    {
+      "itemId": "copper",
+      "name": "铜材",
+      "names": { "zh-CN": "铜材", "en-US": "Copper" },
+      "unitScale": 1,
+      "buybackGoldPerU": 30,
+      "category": "material"
+    },
+    {
+      "itemId": "glass",
+      "name": "玻璃",
+      "names": { "zh-CN": "玻璃", "en-US": "Glass" },
+      "unitScale": 1,
+      "buybackGoldPerU": 40,
+      "category": "material"
+    }
+  ],
+  "recipes": [
+    {
+      "recipeId": "workshop_steel",
+      "buildingId": "workshop",
+      "tier": 2,
+      "durationSeconds": 1800,
+      "inputs": [
+        {
+          "itemId": "iron-ore",
+          "quantityU": 2,
+          "source": "local"
+        }
+      ],
+      "outputs": [
+        {
+          "itemId": "steel",
+          "quantityU": 1
+        },
+        {
+          "itemId": "mineral-byproduct",
+          "quantityU": 1
+        }
+      ]
+    },
+    {
+      "recipeId": "workshop_copper",
+      "buildingId": "workshop",
+      "tier": 2,
+      "durationSeconds": 1800,
+      "inputs": [
+        {
+          "itemId": "copper-ore",
+          "quantityU": 2,
+          "source": "local"
+        }
+      ],
+      "outputs": [
+        {
+          "itemId": "copper",
+          "quantityU": 1
+        }
+      ]
+    },
+    {
+      "recipeId": "workshop_glass",
+      "buildingId": "workshop",
+      "tier": 3,
+      "durationSeconds": 3600,
+      "inputs": [
+        {
+          "itemId": "mineral-byproduct",
+          "quantityU": 2,
+          "source": "server"
+        }
+      ],
+      "outputs": [
+        {
+          "itemId": "glass",
+          "quantityU": 1
+        }
+      ]
+    }
+  ],
+  "delivery": {
+    "maxQuantityU": 100
+  }
+}

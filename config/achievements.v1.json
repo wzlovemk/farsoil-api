@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "configId": "achievements-v1",
+  "supportedLocales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "defaultLocale": "zh-CN",
+  "categories": [
+    {
+      "id": "construction",
+      "name": {
+        "zh-CN": "建设",
+        "en-US": "Construction"
+      }
+    },
+    {
+      "id": "mission",
+      "name": {
+        "zh-CN": "任务",
+        "en-US": "Missions"
+      }
+    },
+    {
+      "id": "gathering",
+      "name": {
+        "zh-CN": "采集",
+        "en-US": "Gathering"
+      }
+    },
+    {
+      "id": "exploration",
+      "name": {
+        "zh-CN": "探索",
+        "en-US": "Exploration"
+      }
+    },
+    {
+      "id": "auction",
+      "name": {
+        "zh-CN": "拍卖",
+        "en-US": "Auction"
+      }
+    },
+    {
+      "id": "special_item",
+      "name": {
+        "zh-CN": "特殊物品",
+        "en-US": "Special Items"
+      }
+    },
+    {
+      "id": "statistics",
+      "name": {
+        "zh-CN": "累计统计",
+        "en-US": "Statistics"
+      }
+    }
+  ],
+  "clientEventTypes": [
+    "construction.completed",
+    "mission.claimed",
+    "item.collected",
+    "farm.operation.completed",
+    "production.delivered",
+    "exploration.discovered",
+    "task.completed"
+  ],
+  "serverEventTypes": [
+    "auction.sold",
+    "item.acquired"
+  ],
+  "limits": {
+    "maxBatchEvents": 50,
+    "maxBatchBytes": 61440,
+    "maxSourcesPerEvent": 128,
+    "maxSourcesPerBatch": 512,
+    "maxDimensionsPerEvent": 24,
+    "maxDistinctValuesPerEvent": 64,
+    "maxPageSize": 50
+  },
+  "achievements": [
+    {
+      "id": "ach_build_trade_station",
+      "category": "construction",
+      "enabled": true,
+      "hidden": false,
+      "scope": "account",
+      "name": {
+        "zh-CN": "星际贸易",
+        "en-US": "Interstellar Trade"
+      },
+      "description": {
+        "zh-CN": "完成第一座交易站",
+        "en-US": "Complete your first trading station"
+      },
+      "condition": {
+        "type": "once",
+        "event": "construction.completed",
+        "filters": {
+          "buildingTypeId": "trade-station"
+        }
+      },
+      "platforms": {
+        "steam": {
+          "apiName": "ACH_BUILD_TRADE_STATION"
+        }
+      }
+    },
+    {
+      "id": "ach_first_mission",
+      "category": "mission",
+      "enabled": true,
+      "hidden": false,
+      "scope": "account",
+      "name": {
+        "zh-CN": "启程",
+        "en-US": "First Steps"
+      },
+      "description": {
+        "zh-CN": "领取首个主线任务奖励",
+        "en-US": "Claim your first main mission reward"
+      },
+      "condition": {
+        "type": "once",
+        "event": "mission.claimed",
+        "filters": {
+          "missionId": "M001"
+        }
+      },
+      "platforms": {
+        "steam": {
+          "apiName": "ACH_FIRST_MISSION"
+        }
+      }
+    },
+    {
+      "id": "ach_gather_wood_100",
+      "category": "gathering",
+      "enabled": true,
+      "hidden": false,
+      "scope": "account",
+      "name": {
+        "zh-CN": "林木储备",
+        "en-US": "Timber Reserve"
+      },
+      "description": {
+        "zh-CN": "累计采集100U木材",
+        "en-US": "Gather 100 units of wood"
+      },
+      "condition": {
+        "type": "counter",
+        "event": "item.collected",
+        "filters": {
+          "itemId": "wood"
+        },
+        "aggregate": "sum",
+        "target": "100"
+      }
+    },
+    {
+      "id": "ach_explore_5_regions",
+      "category": "exploration",
+      "enabled": true,
+      "hidden": false,
+      "scope": "account",
+      "name": {
+        "zh-CN": "探路者",
+        "en-US": "Pathfinder"
+      },
+      "description": {
+        "zh-CN": "发现5个不同区域",
+        "en-US": "Discover five distinct regions"
+      },
+      "condition": {
+        "type": "distinct",
+        "event": "exploration.discovered",
+        "distinctBy": "regionId",
+        "target": "5"
+      }
+    },
+    {
+      "id": "ach_first_auction",
+      "category": "auction",
+      "enabled": true,
+      "hidden": false,
+      "scope": "account",
+      "name": {
+        "zh-CN": "首次成交",
+        "en-US": "First Sale"
+      },
+      "description": {
+        "zh-CN": "首次成功完成拍卖交易",
+        "en-US": "Complete your first auction sale"
+      },
+      "condition": {
+        "type": "once",
+        "event": "auction.sold"
+      }
+    },
+    {
+      "id": "ach_first_special_item",
+      "category": "special_item",
+      "enabled": true,
+      "hidden": true,
+      "scope": "account",
+      "name": {
+        "zh-CN": "稀有发现",
+        "en-US": "Rare Discovery"
+      },
+      "description": {
+        "zh-CN": "首次获得特殊物品",
+        "en-US": "Obtain your first special item"
+      },
+      "condition": {
+        "type": "once",
+        "event": "item.acquired"
+      }
+    },
+    {
+      "id": "ach_sow_1000",
+      "category": "statistics",
+      "enabled": true,
+      "hidden": false,
+      "scope": "account",
+      "name": {
+        "zh-CN": "播种大师",
+        "en-US": "Master Planter"
+      },
+      "description": {
+        "zh-CN": "累计完成1000次播种",
+        "en-US": "Complete 1,000 sowing operations"
+      },
+      "condition": {
+        "type": "counter",
+        "event": "farm.operation.completed",
+        "filters": {
+          "operation": "sow"
+        },
+        "aggregate": "count",
+        "target": "1000"
+      }
+    },
+    {
+      "id": "ach_field_routine",
+      "category": "statistics",
+      "enabled": true,
+      "hidden": false,
+      "scope": "account",
+      "name": {
+        "zh-CN": "耕作有方",
+        "en-US": "Field Routine"
+      },
+      "description": {
+        "zh-CN": "至少播种和收获各2次",
+        "en-US": "Sow and harvest at least twice each"
+      },
+      "condition": {
+        "type": "composite",
+        "mode": "all",
+        "conditions": [
+          {
+            "type": "counter",
+            "event": "farm.operation.completed",
+            "filters": {
+              "operation": "sow"
+            },
+            "aggregate": "count",
+            "target": "2"
+          },
+          {
+            "type": "counter",
+            "event": "farm.operation.completed",
+            "filters": {
+              "operation": "harvest"
+            },
+            "aggregate": "count",
+            "target": "2"
+          }
+        ]
+      }
+    }
+  ]
+}

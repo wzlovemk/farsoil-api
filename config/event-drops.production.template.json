@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "configId": "event-drops-v1",
+  "enabled": false,
+  "assetIssuanceEnabled": false,
+  "denominator": 1000000,
+  "limits": {
+    "maxRulesPerEvent": 16
+  },
+  "rules": [],
+  "cooldown": {
+    "enabled": true,
+    "seconds": 86400
+  }
+}

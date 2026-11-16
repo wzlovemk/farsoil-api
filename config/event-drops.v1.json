@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "configId": "event-drops-v1",
+  "enabled": true,
+  "assetIssuanceEnabled": false,
+  "denominator": 1000000,
+  "limits": {
+    "maxRulesPerEvent": 16
+  },
+  "rules": [
+    {
+      "id": "drop_rare_ore_blue_crystal",
+      "version": 1,
+      "enabled": false,
+      "trigger": {
+        "event": "item.collected",
+        "filters": {
+          "source": "natural",
+          "itemId": "copper-ore"
+        },
+        "unit": "operation",
+        "requiredTrust": "client"
+      },
+      "probability": {
+        "numerator": 1,
+        "denominator": 10000
+      },
+      "reward": {
+        "itemId": "blue-crystal",
+        "quantityU": "1",
+        "destination": "auction-inventory"
+      }
+    },
+    {
+      "id": "drop_mission_bonus",
+      "version": 1,
+      "enabled": false,
+      "trigger": {
+        "event": "mission.claimed",
+        "filters": {
+          "missionId": "M006"
+        },
+        "unit": "operation",
+        "requiredTrust": "client"
+      },
+      "probability": {
+        "numerator": 1,
+        "denominator": 100
+      },
+      "reward": {
+        "itemId": "blue-crystal",
+        "quantityU": "1",
+        "destination": "auction-inventory"
+      }
+    }
+  ],
+  "cooldown": {
+    "enabled": true,
+    "seconds": 86400
+  }
+}

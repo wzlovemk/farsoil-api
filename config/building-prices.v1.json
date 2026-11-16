@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "configId": "p15-building-prices-v1",
+  "source": "assets/environment/building/**/manifest.json",
+  "purchase": {},
+  "upgrade": {}
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "configId": "account-auth-v1",
+  "status": "ACCOUNT_V1_01",
+  "password": {
+    "minLength": 10,
+    "maxLength": 128,
+    "emailMaxLength": 254,
+    "saltBytes": 16,
+    "hashBytes": 64,
+    "scryptN": 16384,
+    "scryptR": 8,
+    "scryptP": 1,
+    "recentAuthenticationSeconds": 600
+  },
+  "session": {
+    "randomBytes": 32,
+    "accessTtlSeconds": 900,
+    "refreshIdleSeconds": 86400,
+    "refreshAbsoluteSeconds": 604800,
+    "cookieName": "__Host-sbf_refresh",
+    "cookieSameSite": "Lax"
+  },
+  "rateLimit": {
+    "windowSeconds": 60,
+    "registrationPerIp": 5,
+    "loginPerIp": 10,
+    "restorePerIp": 30,
+    "renewPerIp": 60,
+    "apiRequestsPerMinute": 300
+  },
+  "providers": {
+    "email": true,
+    "google": true,
+    "steam": false,
+    "apple": false
+  },
+  "provider": {
+    "challengeTtlSeconds": 300,
+    "handoffTtlSeconds": 600,
+    "upstreamTimeoutMs": 10000
+  }
+}

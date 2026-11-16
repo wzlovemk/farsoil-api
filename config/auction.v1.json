@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "configId": "auction-v1-mock",
+  "status": "MOCK_IMPLEMENTED_FOCUSED_VERIFIED",
+  "marketMode": "demo",
+  "currency": {
+    "code": "G",
+    "integerOnly": true
+  },
+  "auction": {
+    "wholeLotOnly": true,
+    "allowBuyout": true,
+    "minBidIncrementGold": 10,
+    "durationSeconds": [
+      1800,
+      7200,
+      21600
+    ],
+    "feesGold": {
+      "listing": 0,
+      "bidding": 0,
+      "settlement": 0,
+      "cancellation": 0
+    }
+  },
+  "refresh": {
+    "visibleMarketPollIntervalMs": 15000
+  },
+  "pagination": {
+    "defaultPageSize": 20,
+    "maxPageSize": 50
+  },
+  "maintenance": {
+    "sweepIntervalMs": 15000
+  },
+  "listingQuery": {
+    "maxSearchCharacters": 120,
+    "maxCategoryCharacters": 60
+  },
+  "sharedMarket": {
+    "marketId": "shared-auction-global-v1",
+    "listingMaxAgeSeconds": 86400
+  }
+}
