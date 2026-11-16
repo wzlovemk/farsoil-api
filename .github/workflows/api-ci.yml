@@ -1,0 +1,42 @@
+name: FARSOIL API verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci --ignore-scripts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Drop configuration preflight
+        run: npm run drop:preflight
+      - name: Tests
+        run: npm test
+      - name: Docker smoke
+        run: |
+          docker build -t farsoil-api:ci .
+          docker run -d --name farsoil-api-ci -p 3001:3001 farsoil-api:ci
+          trap 'docker rm -f farsoil-api-ci >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3001/health >/dev/null; then
+              curl -fsS http://127.0.0.1:3001/health
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs farsoil-api-ci
+          exit 1
