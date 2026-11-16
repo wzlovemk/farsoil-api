@@ -1,4 +1,5 @@
 import {readFileSync} from "node:fs";
+import steamSyncConfigRaw from "../../config/steam-achievements.v1.json" with {type:"json"};
 import type {AuctionDatabase} from "../database.ts";
 import type {AchievementConfig} from "./config.ts";
 
@@ -34,8 +35,7 @@ export function validateSteamSyncConfig(raw:unknown):SteamSyncConfig{
   return raw as SteamSyncConfig;
 }
 export function loadSteamSyncConfig():SteamSyncConfig{
-  return validateSteamSyncConfig(JSON.parse(
-    readFileSync(new URL("../../config/steam-achievements.v1.json",import.meta.url),"utf8")) as unknown);
+  return validateSteamSyncConfig(structuredClone(steamSyncConfigRaw) as unknown);
 }
 export class SteamAchievementSync{
   readonly config:SteamSyncConfig;

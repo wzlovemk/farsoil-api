@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import achievementConfigRaw from "../../config/achievements.v1.json" with {type:"json"};
 
 export type LocalizedText=Record<string,string>;
 export type AchievementFilter=Record<string,string>;
@@ -146,8 +147,8 @@ export function validateAchievementConfig(raw:unknown):AchievementConfig{
   return raw as AchievementConfig;
 }
 export function loadAchievementConfig(path?:string|URL):AchievementConfig{
-  const location=path??new URL("../../config/achievements.v1.json",import.meta.url);
-  return validateAchievementConfig(JSON.parse(readFileSync(location,"utf8")) as unknown);
+  if(path!==undefined)return validateAchievementConfig(JSON.parse(readFileSync(path,"utf8")) as unknown);
+  return validateAchievementConfig(structuredClone(achievementConfigRaw) as unknown);
 }
 export function publicAchievementCatalog(config:AchievementConfig,locale:string){
   const language=config.supportedLocales.includes(locale)?locale:config.defaultLocale;

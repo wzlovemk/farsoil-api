@@ -1,4 +1,5 @@
 import {readFileSync} from "node:fs";
+import dropConfigRaw from "../../config/event-drops.v1.json" with {type:"json"};
 export type DropTrust="client"|"verified"|"server";
 export type DropRule={
   id:string;version:number;enabled:boolean;
@@ -67,7 +68,8 @@ export function validateDropConfig(raw:unknown,events:readonly string[],items:re
 /** Configuration file selection belongs to the server process, never a client request. */
 export function loadDropConfig(events:readonly string[],items:readonly string[],
   sourceFile?:string):DropConfig{
-  return validateDropConfig(JSON.parse(readFileSync(
-    sourceFile?.trim()||new URL("../../config/event-drops.v1.json",import.meta.url),
-    "utf8")) as unknown,events,items);
+  const raw=sourceFile?.trim()?
+    JSON.parse(readFileSync(sourceFile.trim(),"utf8")) as unknown:
+    structuredClone(dropConfigRaw) as unknown;
+  return validateDropConfig(raw,events,items);
 }
