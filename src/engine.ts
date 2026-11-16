@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { AuctionDatabase } from "./database.ts";
+import type { AuctionDatabase } from "./database.ts";
 import type { P15Economy } from "./p15Economy.ts";
 import { ApiError, exactPrice, parseUnits, unitsToString, type AuctionConfig, type CatalogItem, type Fixture, type AuctionLocale } from "./config.ts";
 

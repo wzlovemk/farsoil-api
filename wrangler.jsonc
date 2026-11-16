@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "farsoil-api",
+  "main": "src/worker/index.mjs",
+  "compatibility_date": "2026-11-16",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BACKEND",
+        "class_name": "FarsoilBackend"
+      }
+    ]
+  },
+  "exports": {
+    "FarsoilBackend": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "vars": {
+    "FARSOIL_API_RUNTIME": "worker"
+  }
+}

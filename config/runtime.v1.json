@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "configId": "farsoil-api-runtime-v1",
+  "localRuntime": "node",
+  "runtimes": {
+    "node": {
+      "host": "127.0.0.1",
+      "port": 3001
+    },
+    "worker": {
+      "wranglerConfig": "wrangler.jsonc",
+      "durableObjectName": "global"
+    }
+  }
+}
