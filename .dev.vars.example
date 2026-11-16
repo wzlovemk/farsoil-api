@@ -4,3 +4,8 @@ AUTH_PUBLIC_ORIGIN=http://127.0.0.1:8787
 AUTH_CLIENT_RETURN_ORIGIN=http://127.0.0.1:5173
 AUTH_GOOGLE_CLIENT_ID=replace-with-google-web-oauth-client-id
 AUTH_GOOGLE_CLIENT_SECRET=replace-with-rotated-server-only-secret
+# Optional while Steam sync remains disabled in config.
+# STEAM_APP_ID=
+# STEAM_PUBLISHER_KEY=
+# Optional Worker replacement for Node's AUCTION_DROP_CONFIG_FILE.
+# AUCTION_DROP_CONFIG_JSON={"schemaVersion":1,...}

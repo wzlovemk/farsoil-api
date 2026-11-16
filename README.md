@@ -1,6 +1,6 @@
 # FARSOIL API｜账号、经济与拍卖服务
 
-> 本仓库从 `wzlovemk/fram-game/server/auction` 拆分而来。当前阶段仅完成仓库边界拆分，运行时仍保持 Node.js 22 + TypeScript + Fastify + SQLite；迁移 Cloudflare Workers / Durable Objects 属于后续独立阶段，不在本次拆分中改变。
+> 本仓库从 `wzlovemk/fram-game/server/auction` 拆分而来。当前同时提供 **Node.js 22 + Fastify + SQLite** 与 **Cloudflare Worker + SQLite Durable Object** 两套运行时；Node 实现完整保留，Worker 复用同一套领域规则与版本化配置。
 >
 > 统一服务端 OAuth/OIDC 回调和桌面客户端一次性会话交接已实现并进入代码验证；真实 Google 授权仍需本地私有密钥和浏览器联调。本文件描述当前代码。
 
@@ -13,7 +13,10 @@
 - `npm run runtime:node` 永远启动现有 `src/main.ts`。
 - `npm run runtime:worker` 启动 Wrangler + SQLite Durable Object。
 - Worker 已迁移：基础账号、玩家资料、Session 续期/撤销、P15 经济、建筑 G 扣费/确认/反转/退款、重置收费、服务器商品领取。
-- Worker 已迁移 Google/Steam OAuth/OIDC 路由；生产密钥通过 Cloudflare Secrets / Variables 注入，不写入版本库。\n- Worker 已迁移成就、事件批处理与 DROP-01；Node 的 `setInterval` 保持原样，Worker 的 Steam 成就同步使用 Durable Object Alarm。\n- Worker 已迁移 Demo / 正式拍卖查询与写入。Node 继续使用原 SQL Savepoint；SQLite DO 使用同步分段事务保证业务失败回滚后再写幂等错误回执。\n- 当前 V1 HTTP API 已全部具备 Worker 路径；Node 运行时仍完整保留，可随时通过配置切回。
+- Worker 已迁移 Google/Steam OAuth/OIDC 路由；生产密钥通过 Cloudflare Secrets / Variables 注入，不写入版本库。
+- Worker 已迁移成就、事件批处理与 DROP-01；Node 的 `setInterval` 保持原样，Worker 的 Steam 成就同步使用 Durable Object Alarm。
+- Worker 已迁移 Demo / 正式拍卖查询与写入。Node 继续使用原 SQL Savepoint；SQLite DO 使用同步分段事务保证业务失败回滚后再写幂等错误回执。
+- 当前 V1 HTTP API 已全部具备 Worker 路径；Node 运行时仍完整保留，可随时通过配置切回。
 - Node 与 Worker 复用同一份 `config/*.json` 事实配置和同一套领域类；不复制价格、账号或经济规则。
 
 ## 运行时仓库边界
@@ -26,7 +29,7 @@
 
 ## 架构边界
 
-- Node.js 22、TypeScript、Fastify、SQLite（支持迁移至独立 PostgreSQL 适配层）。独立部署，**不依赖 Cloudflare API**。
+- Node 运行时：Node.js 22、TypeScript、Fastify、`node:sqlite`，继续支持原本地开发、测试与 Docker 方式。\n- Worker 运行时：Cloudflare Worker + SQLite Durable Object，使用同一 `/api/v1` HTTP 合同；数据库迁移通过 `farsoil_schema_migrations` 管理。
 - `account_users.user_id` 是永久身份；`account_password_credentials`、`account_identities`、`account_sessions`、`auth_challenges` 单独管理认证与登录方式。Token 是短期不透明 Bearer，服务器只保存哈希。刷新用独立轮换 `HttpOnly; Secure; SameSite=Lax` Cookie，不写入客户端本地存储。
 - `markets` 的配置化全服共享 `marketId` 只标记服务器拍卖范围；服务端通过真实认证 Session 确定各方 `userId`。钱包、服务器可售库存、挂单卖家、出价人、成交买家、冻结及托管、结算、出价历史、幂等结果分别按 `userId` 追溯。
 - `config/mock-fixtures.v1.json` 是**模拟测试资产**，不代表真实 Worker 生产、金币或背包库存。当前游戏背包尚不读取服务器可售库存；只有拍卖服务端持有其模拟库存。
@@ -35,16 +38,37 @@
 
 ## 本地开发和部署
 
-服务端独立运行（Node.js ≥22.13）：
+安装与验证：
 
 ```bash
 npm install
 npm run typecheck
 npm test
-npm start
 ```
 
-启动后默认 `127.0.0.1:3001`，健康端点 `GET /health`。游戏客户端位于独立仓库 `wzlovemk/fram-game`；其开发/测试客户端默认直接请求该服务器，Vite 的 `/api/v1` 代理仍保留供显式同源模式使用。正式部署要求 HTTPS 并建议同源反向代理。
+按 `config/runtime.v1.json.localRuntime` 启动当前选择的本地运行时：
+
+```bash
+npm run runtime
+```
+
+也可以显式启动：
+
+```bash
+npm run runtime:node
+npm run runtime:worker
+```
+
+Node 默认监听 `127.0.0.1:3001`；Wrangler 本地 Worker 使用 Wrangler 分配的本地端口。两种运行时健康端点均为 `GET /health`。游戏客户端位于独立仓库 `wzlovemk/fram-game`；其开发/测试客户端默认直接请求该服务器，Vite 的 `/api/v1` 代理仍保留供显式同源模式使用。正式部署要求 HTTPS 并建议同源反向代理。
+
+### Cloudflare Worker 配置
+
+- 本地 Worker 私有变量：复制 `.dev.vars.example` 为 `.dev.vars`。
+- 正式环境的 `AUTH_GOOGLE_CLIENT_SECRET`、`STEAM_PUBLISHER_KEY` 等私密值使用 Cloudflare Secrets，不提交 Git。
+- `AUCTION_CORS_ORIGINS`、`AUTH_PUBLIC_ORIGIN`、`AUTH_CLIENT_RETURN_ORIGIN` 由 Worker 环境变量配置。
+- 如需覆盖 DROP-01 正式配置，Worker 使用 `AUCTION_DROP_CONFIG_JSON`；Node 继续保留原 `AUCTION_DROP_CONFIG_FILE` 文件方式。
+- `npm run worker:dry-run` 只验证打包；`npm run worker:deploy` 才执行正式部署。
+- Durable Object 实例名读取 `config/runtime.v1.json -> runtimes.worker.durableObjectName`，不在 Worker 入口硬编码。
 
 ### 全局客户端服务器地址
 
