@@ -132,6 +132,12 @@ export class AccountAuth {
     const params=row?readScheme(String(row.password_scheme)):this.rules.password;
     const actual=await derive(password,salt,this.rules,params);
     const expected=row?Buffer.from(String(row.password_hash),"hex"):Buffer.alloc(actual.length);
+    // A verified Google-only account needs its original sign-in method before
+    // authenticated password setup. Never mislabel an account with a password.
+    if(!row&&this.one(
+      "SELECT 1 FROM account_emails e JOIN account_users u ON u.user_id=e.user_id JOIN account_identities i ON i.user_id=e.user_id AND i.provider='google' AND i.provider_subject=e.provider_subject WHERE e.email_normalized=? AND e.verified=1 AND e.verification_provider='google' AND u.status='active' AND NOT EXISTS(SELECT 1 FROM account_password_credentials p WHERE p.user_id=e.user_id)",email))
+      throw new ApiError(401,"GOOGLE_LOGIN_REQUIRED",
+        "This email uses Google sign-in and has no game password. Continue with Google, then set a password in account settings.");
     if(!row||row.status!=="active"||expected.length!==actual.length||!timingSafeEqual(expected,actual))
       throw invalidCredentials();
     const at=this.clock();

@@ -133,6 +133,7 @@ Node 与本地 Worker 默认都监听 `127.0.0.1:3001`，端口来自 `config/ru
 | --- | --- | --- |
 | POST | `/auth/register` | 邮箱密码注册，**不验证邮箱**；建立永久 userId |
 | POST | `/auth/login` | 已注册邮箱密码登录，不静默自动注册 |
+| POST | `/auth/enter` | 统一入口：未占用邮箱注册并登录，已有邮箱按原凭据登录 |
 | GET | `/auth/me` | 当前用户的主账号认证邮箱（及验证状态/来源）、密码登录邮箱、Provider 绑定与邮箱冲突状态 |
 | POST | `/auth/restore` | 旋转 HttpOnly Refresh Cookie，返回新 Access Token |
 | POST | `/auth/renew` | 有效 Bearer Access Token 轮换 |
@@ -150,6 +151,8 @@ Node 与本地 Worker 默认都监听 `127.0.0.1:3001`，端口来自 `config/ru
 | PATCH | `/users/me/profile` | 修改当前玩家昵称/默认或 Google 头像选择，配置化校验及限流 |
 
 认证 Cookie 请求需要 `X-SBF-Auth: v1` 且执行 CSRF/Origin 校验。Access Token 仅在 JS 运行内存，其他受保护业务 API 使用 `Authorization: Bearer <token>`、`credentials:"omit"`。**邮箱密码自行注册的邮箱仍默认为未验证**；Google 经可信 OIDC 核实 `email_verified=true` 后，将对应邮箱写入当前 `userId` 的认证邮箱，但不自动开通密码登录或合并账号。Steam OpenID 当前不提供可信邮箱；Google/Steam 未来返回的邮箱冲突均不得接管另一账号。忘记密码暂不支持自助找回。
+
+**2026-11-20 Google 登录提示（用户确认）**：`/auth/enter` 与 `/auth/login` 对已验证 Google 邮箱、仍有关联 Google 身份的活跃账号，且该账号尚无任何游戏密码凭据时，返回 HTTP `401` / `GOOGLE_LOGIN_REQUIRED`，提示先使用 Google 登录，再在账号管理中设置密码。客户端通过错误码显示简体中文、繁体中文或英文文案。该特定情形明确提示原登录方式；普通错密、停用账号和其他无法认证的情况仍返回 `INVALID_CREDENTIALS`。提示不创建账号、密码或会话；已有密码账号即使同时绑定 Google，也按原密码流程处理。Node 与 Worker 复用同一 `AccountAuth` 实现。
 
 ## 拍卖 API（`/api/v1/auction`）
 

@@ -6,6 +6,7 @@ import { loadConfig } from "../src/config.ts";
 import { AuctionEngine } from "../src/engine.ts";
 import { createAuctionServer } from "../src/http.ts";
 import { AccountAuth, loadAuthConfig } from "../src/accountAuth.ts";
+import { WorkerApiRouter } from "../src/worker/router.mjs";
 
 const email="alien.player@example.com",password="safe-password-1234";
 function fixture(){
@@ -172,23 +173,65 @@ test("ACCOUNT unified entry: create, normalize, retry and reject wrong or disabl
   }finally{await c.close();}
 });
 
-test("ACCOUNT unified entry: Google verified email cannot be claimed without authenticated password setup",async()=>{
+test("ACCOUNT unified entry: Google-only accounts receive sign-in guidance until authenticated password setup",async()=>{
   const c=fixture();
   try{
     const state=createHash("sha256").update("unified-entry-google-test").digest("hex");
     c.db.db.prepare("INSERT INTO auth_challenges(challenge_hash,provider,intent,return_intent,expires_at_ms) VALUES(?,'google','login','home',?)")
       .run(state,c.now.value+300000);
     const google=c.account.completeProvider("google","verified-unified-test",state,{email,emailVerified:true});
-    const rejected=await c.call("POST","/api/v1/auth/enter",{email,password});
-    assert.equal(rejected.status,401);
-    assert.equal(rejected.body.error.code,"INVALID_CREDENTIALS");
+    const worker=new WorkerApiRouter({engine:c.engine,accounts:c.account},{},AUCTION_SCHEMA_VERSION);
+    for(const path of ["/api/v1/auth/enter","/api/v1/auth/login"]){
+      const credentials={email:" ALIEN.Player@Example.com ",password};
+      const rejected=await c.call("POST",path,credentials);
+      assert.equal(rejected.status,401);
+      assert.equal(rejected.body.error.code,"GOOGLE_LOGIN_REQUIRED");
+      assert.match(rejected.body.error.message,/Continue with Google.*set a password in account settings/);
+      assert.equal(rejected.body.token,undefined);
+      assert.equal(rejected.headers["set-cookie"],undefined);
+      const workerRejected=await worker.handle(new Request("https://api.example.com"+path,{
+        method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(credentials)
+      }));
+      assert.equal(workerRejected.status,401);
+      const workerBody=await workerRejected.json();
+      assert.deepEqual(workerBody.error,rejected.body.error);
+      assert.equal(workerBody.token,undefined);
+      assert.equal(workerRejected.headers.get("set-cookie"),null);
+    }
     assert.equal((c.db.db.prepare("SELECT COUNT(*) n FROM account_users").get() as {n:number}).n,1);
     assert.equal((c.db.db.prepare("SELECT COUNT(*) n FROM account_password_credentials").get() as {n:number}).n,0);
+    assert.equal((c.db.db.prepare("SELECT COUNT(*) n FROM account_sessions").get() as {n:number}).n,1);
+    c.db.db.prepare("UPDATE account_users SET status='disabled' WHERE user_id=?").run(google.userId);
+    const disabled=await c.call("POST","/api/v1/auth/enter",{email,password});
+    assert.equal(disabled.status,401);
+    assert.equal(disabled.body.error.code,"INVALID_CREDENTIALS");
+    c.db.db.prepare("UPDATE account_users SET status='active' WHERE user_id=?").run(google.userId);
     const ctx=c.account.authenticate(google.token);
     await c.account.setupPassword(ctx,{email,password});
     const after=await c.call("POST","/api/v1/auth/enter",{email,password});
     assert.equal(after.status,200);
     assert.equal(after.body.userId,google.userId);
+    const wrong=await c.call("POST","/api/v1/auth/enter",{email,password:"wrong-password-1234"});
+    assert.equal(wrong.status,401);
+    assert.equal(wrong.body.error.code,"INVALID_CREDENTIALS");
+  }finally{await c.close();}
+});
+
+test("ACCOUNT Google guidance: an existing password on another login email is not described as unset",async()=>{
+  const c=fixture();
+  try{
+    const state=createHash("sha256").update("google-with-other-password-email").digest("hex");
+    c.db.db.prepare("INSERT INTO auth_challenges(challenge_hash,provider,intent,return_intent,expires_at_ms) VALUES(?,'google','login','home',?)")
+      .run(state,c.now.value+300000);
+    const google=c.account.completeProvider("google","other-password-email",state,{email,emailVerified:true});
+    const passwordEmail="password-login@example.com";
+    await c.account.setupPassword(c.account.authenticate(google.token),{email:passwordEmail,password});
+    const rejected=await c.call("POST","/api/v1/auth/enter",{email,password});
+    assert.equal(rejected.status,401);
+    assert.equal(rejected.body.error.code,"INVALID_CREDENTIALS");
+    const login=await c.call("POST","/api/v1/auth/enter",{email:passwordEmail,password});
+    assert.equal(login.status,200);
+    assert.equal(login.body.userId,google.userId);
   }finally{await c.close();}
 });
 
