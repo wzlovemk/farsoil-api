@@ -148,13 +148,15 @@ export class AccountAuth {
     });
   }
   /** Unified entry; email ownership alone never grants access or a password. */
-  async enter(raw:unknown):Promise<IssuedAccountSession> {
+  async enter(raw:unknown,beforeRegister?:()=>void):Promise<IssuedAccountSession> {
     const args=exactly(raw,["email","password"]);
     const email=this.email(args.email),password=this.password(args.password);
     const credentials={email,password};
     if(this.one("SELECT 1 FROM account_password_credentials WHERE email_normalized=?",email)||
       this.one("SELECT 1 FROM account_emails WHERE email_normalized=?",email))
       return this.login(credentials);
+    // Registration quota is consumed only when this request actually attempts account creation.
+    beforeRegister?.();
     try{
       return await this.register(credentials);
     }catch(reason){

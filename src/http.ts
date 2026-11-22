@@ -125,7 +125,8 @@ export function createAuctionServer(engine:AuctionEngine, opts:ServerOptions={})
     let value=rate.get(key);
     if(!value || t>=value.until){value={until:t+windowMs,count:0};rate.set(key,value);}
     value.count++;
-    if(value.count>max)throw new ApiError(429,"RATE_LIMITED","Too many requests");
+    if(value.count>max)throw new ApiError(429,"RATE_LIMITED","Too many requests",
+      Math.max(1,Math.ceil((value.until-t)/1000)));
     if(rate.size>5000)for(const [k,v] of rate)if(t>=v.until)rate.delete(k);
   };
   const bearer=(req:FastifyRequest):string=>{
@@ -203,6 +204,7 @@ export function createAuctionServer(engine:AuctionEngine, opts:ServerOptions={})
       reply.header("Vary","Accept-Language, Origin");
       reply.header("Access-Control-Allow-Methods","GET, POST, PATCH, OPTIONS");
       reply.header("Access-Control-Allow-Headers","Authorization, Content-Type, Idempotency-Key, Accept-Language, X-Client-Version, X-Client-Platform, X-Request-ID, X-SBF-Auth");
+      reply.header("Access-Control-Expose-Headers","Retry-After");
       reply.header("Access-Control-Max-Age","600");
     }
     const auth=req.headers.authorization;
@@ -214,6 +216,7 @@ export function createAuctionServer(engine:AuctionEngine, opts:ServerOptions={})
       typeof error.statusCode==="number")?error.statusCode:undefined;
     const status=e?.status??(statusCode!==undefined && statusCode<500?422:500);
     const code=e?.code??(status===422?"INVALID_REQUEST":"SERVER_ERROR");
+    if(e?.retryAfterSeconds)reply.header("Retry-After",String(e.retryAfterSeconds));
     reply.code(status).send({serverTime:new Date().toISOString(),
       error:{code,message:e?.message??(status===500?"Internal server error":"Invalid request")}});
   });
@@ -232,10 +235,9 @@ export function createAuctionServer(engine:AuctionEngine, opts:ServerOptions={})
     return reply.send(publicSession(issued));
   });
   app.post("/api/v1/auth/enter",async(req,reply)=>{
-    // Charge both existing budgets regardless of whether this email exists.
+    // A unified entry spends the sign-in budget, plus registration quota only when creating an account.
     authLimit(req,"login");
-    authLimit(req,"register");
-    const issued=await accounts.enter(req.body);
+    const issued=await accounts.enter(req.body,()=>authLimit(req,"register"));
     setAuthCookie(reply,issued);
     return reply.send(publicSession(issued));
   });

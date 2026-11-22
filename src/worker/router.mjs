@@ -39,6 +39,7 @@ export class WorkerApiRouter {
       result.set("vary","Accept-Language, Origin");
       if(new URL(request.url).pathname.startsWith(apiPrefix+"/auth/"))
         result.set("access-control-allow-credentials","true");
+      result.set("access-control-expose-headers","Retry-After");
     }
     for(const [name,value] of Object.entries(headers)){
       if(Array.isArray(value)){for(const item of value)result.append(name,String(item));}
@@ -73,7 +74,8 @@ export class WorkerApiRouter {
     let value=this.rate.get(key);
     if(!value||now>=value.until){value={until:now+windowMs,count:0};this.rate.set(key,value);}
     value.count++;
-    if(value.count>max)throw new ApiError(429,"RATE_LIMITED","Too many requests");
+    if(value.count>max)throw new ApiError(429,"RATE_LIMITED","Too many requests",
+      Math.max(1,Math.ceil((value.until-now)/1000)));
     if(this.rate.size>5000)for(const [item,current] of this.rate)if(now>=current.until)this.rate.delete(item);
   }
 
@@ -188,9 +190,10 @@ export class WorkerApiRouter {
         const input=await this.body(request);
         if(path.endsWith("/register"))this.authLimit(request,"register",input);
         else if(path.endsWith("/login"))this.authLimit(request,"login",input);
-        else{this.authLimit(request,"login",input);this.authLimit(request,"register",input);}
+        else this.authLimit(request,"login",input);
         const issued=path.endsWith("/register")?await this.accounts.register(input):
-          path.endsWith("/login")?await this.accounts.login(input):await this.accounts.enter(input);
+          path.endsWith("/login")?await this.accounts.login(input):
+            await this.accounts.enter(input,()=>this.authLimit(request,"register",input));
         return this.response(request,publicSession(issued),path.endsWith("/register")?201:200,
           {"set-cookie":this.setCookie(issued)});
       }
@@ -469,7 +472,7 @@ export class WorkerApiRouter {
       return this.response(request,{
         serverTime:new Date().toISOString(),
         error:{code:apiError?.code??"SERVER_ERROR",message:apiError?.message??"Internal server error"}
-      },status);
+      },status,apiError?.retryAfterSeconds?{"retry-after":apiError.retryAfterSeconds}:{});
     }
   }
 }

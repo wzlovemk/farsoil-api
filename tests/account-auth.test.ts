@@ -252,19 +252,49 @@ test("ACCOUNT unified entry: concurrent first submissions create one account and
   }finally{await c.close();}
 });
 
-test("ACCOUNT unified entry: strict inputs and shared anonymous registration/login limits",async()=>{
+test("ACCOUNT unified entry: strict inputs, login throttling and Retry-After",async()=>{
   const c=fixture();
   try{
     await assert.rejects(c.account.enter({email,password,userId:"spoof"}),{code:"INVALID_AUTH_INPUT"});
     await assert.rejects(c.account.enter({email:"bad-address",password}),{code:"INVALID_EMAIL"});
     await assert.rejects(c.account.enter({email,password:"short"}),{code:"INVALID_PASSWORD"});
-    const max=Math.min(c.authRules.rateLimit.registrationPerIp,c.authRules.rateLimit.loginPerIp);
-    for(let i=0;i<max;i++){
+    for(let i=0;i<c.authRules.rateLimit.loginPerIp;i++){
       const bad=await c.call("POST","/api/v1/auth/enter",{email,password:"short"});
       assert.equal(bad.status,422);
     }
-    assert.equal((await c.call("POST","/api/v1/auth/enter",{email,password})).status,429);
-    assert.equal((await c.call("POST","/api/v1/auth/register",{email,password})).status,429);
-    assert.equal((c.db.db.prepare("SELECT COUNT(*) n FROM account_users").get() as {n:number}).n,0);
+    const throttled=await c.call("POST","/api/v1/auth/enter",{email,password});
+    assert.equal(throttled.status,429);
+    assert.equal(throttled.body.error.code,"RATE_LIMITED");
+    assert.ok(Number(throttled.headers["retry-after"])>0);
+    // Invalid entry attempts must not spend the independent registration budget.
+    assert.equal((await c.call("POST","/api/v1/auth/register",{email,password})).status,201);
+    assert.equal((c.db.db.prepare("SELECT COUNT(*) n FROM account_users").get() as {n:number}).n,1);
   }finally{await c.close();}
+});
+
+test("ACCOUNT unified entry: new-account quota preserves existing sign-in on Node and Worker",async()=>{
+  for(const runtime of ["node","worker"] as const){
+    const c=fixture();
+    try{
+      const worker=new WorkerApiRouter({engine:c.engine,accounts:c.account},{},AUCTION_SCHEMA_VERSION);
+      const send=async(address:string)=>{
+        if(runtime==="node")return c.call("POST","/api/v1/auth/enter",{email:address,password});
+        const response=await worker.handle(new Request("https://api.example.com/api/v1/auth/enter",{
+          method:"POST",headers:{"content-type":"application/json","cf-connecting-ip":"203.0.113.10"},
+          body:JSON.stringify({email:address,password})
+        }));
+        return {status:response.status,body:await response.json() as any,headers:{"retry-after":response.headers.get("retry-after")}};
+      };
+      for(let i=0;i<c.authRules.rateLimit.registrationPerIp;i++){
+        const first=await send(`${runtime}-new-${i}@example.com`);
+        assert.equal(first.status,200);
+      }
+      const blocked=await send(`${runtime}-over@example.com`);
+      assert.equal(blocked.status,429);
+      assert.equal(blocked.body.error.code,"RATE_LIMITED");
+      assert.ok(Number(blocked.headers["retry-after"])>0);
+      const existing=await send(`${runtime}-new-0@example.com`);
+      assert.equal(existing.status,200);
+    }finally{await c.close();}
+  }
 });
