@@ -28,8 +28,10 @@ export type Fixture = { schemaVersion: number; configId: string; localization:Au
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string, readonly retryAfterSeconds?:number) {
+  readonly retryAfterSeconds?: number;
+  constructor(status: number, code: string, message: string, retryAfterSeconds?:number) {
     super(message); this.name = "ApiError"; this.status = status; this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 export function loadConfig(): { rules: AuctionConfig; fixtures: Fixture } {
