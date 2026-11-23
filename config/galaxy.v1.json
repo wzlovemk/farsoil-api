@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "configId": "galaxy-v1",
+  "status": "PROVISIONAL_NOT_BALANCED",
+  "generationVersion": 1,
+  "starVisualVersion": 1,
+  "planetVisualVersion": 1,
+  "systemName": {
+    "minLength": 1,
+    "maxLength": 32,
+    "defaultName": "Astra"
+  },
+  "coordinates": {
+    "minimumDistanceLy": 2000,
+    "typicalNeighborMinLy": 2000,
+    "typicalNeighborMaxLy": 10000,
+    "initialRadiusLy": 12000,
+    "expansionStepLy": 8000,
+    "maxPlacementAttemptsPerRing": 64,
+    "maxRingExpansions": 64,
+    "sectorSizeLy": 2000,
+    "clusterAnchorProbability": 0.65
+  },
+  "star": {
+    "spectralClasses": [
+      "F",
+      "G",
+      "K",
+      "M"
+    ],
+    "spectralWeights": [
+      15,
+      35,
+      30,
+      20
+    ],
+    "sizeVariants": 4
+  },
+  "planets": {
+    "minCount": 3,
+    "maxCount": 7,
+    "orbitRadiusMinNormalized": 0.18,
+    "orbitRadiusMaxNormalized": 0.92,
+    "orbitJitterFraction": 0.12,
+    "palettes": [
+      "temperate",
+      "ocean",
+      "dry",
+      "rocky",
+      "cold"
+    ],
+    "surfaceVariants": 4,
+    "indexRange": [
+      0.12,
+      0.92
+    ]
+  },
+  "hiddenResources": {
+    "schemaVersion": 1,
+    "pool": [
+      "iron-ore",
+      "copper-ore",
+      "stone",
+      "crude-oil",
+      "tungsten",
+      "uranium",
+      "azure",
+      "flux",
+      "void"
+    ],
+    "minSignalsPerPlanet": 1,
+    "maxSignalsPerPlanet": 4,
+    "richnessLevels": [
+      "trace",
+      "normal",
+      "rich"
+    ],
+    "richnessWeights": [
+      30,
+      50,
+      20
+    ],
+    "reservesRangeU": {
+      "trace": [
+        500,
+        2000
+      ],
+      "normal": [
+        2000,
+        8000
+      ],
+      "rich": [
+        8000,
+        25000
+      ]
+    }
+  },
+  "bootstrap": {
+    "maxSystems": 100
+  }
+}

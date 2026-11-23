@@ -8,12 +8,14 @@ import {AchievementEngine} from "../achievements/engine.ts";
 import {SteamAchievementSync} from "../achievements/steamSync.ts";
 import {loadDropConfig,validateDropConfig} from "../drops/config.ts";
 import {DropEngine} from "../drops/engine.ts";
+import {GalaxyService} from "../galaxy.ts";
 
 export function createWorkerServices(database,env){
   const {rules,fixtures}=loadConfig();
   const engine=new AuctionEngine(database,rules,fixtures);
   const accounts=new AccountAuth(database);
   const economy=new P15Economy(database,undefined,engine.clock);
+  const galaxy=new GalaxyService(database,accounts.profiles,undefined,engine.clock);
   engine.setFormalEconomy(economy);
   const providers=new ProviderAuth(database,accounts,{
     publicOrigin:env.AUTH_PUBLIC_ORIGIN,
@@ -85,5 +87,5 @@ export function createWorkerServices(database,env){
       attributes:{itemId:sale.itemId,source:"auction"},trust:"server"
     });
   });
-  return {engine,accounts,economy,providers,achievements,steamSync,drops,canMintFromClient};
+  return {engine,accounts,economy,galaxy,providers,achievements,steamSync,drops,canMintFromClient};
 }

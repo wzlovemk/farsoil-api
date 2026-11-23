@@ -19,6 +19,7 @@ export class WorkerApiRouter {
     this.engine=services.engine;
     this.accounts=services.accounts;
     this.economy=services.economy;
+    this.galaxy=services.galaxy;
     this.providers=services.providers;
     this.achievements=services.achievements;
     this.steamSync=services.steamSync;
@@ -433,6 +434,21 @@ export class WorkerApiRouter {
       const formalCancel=path.match(/^\/api\/v1\/economy\/auction\/listings\/([^/]+)\/cancel$/);
       if(method==="POST"&&formalCancel){
         const result=await formalWrite("cancel",this.part(formalCancel[1]));return this.response(request,result.body,result.code);
+      }
+
+      if(method==="POST"&&path===apiPrefix+"/galaxy/systems"){
+        const ctx=this.accountContext(request);
+        const result=this.galaxy.registerSystem(ctx.userId,await this.body(request),request.headers.get("idempotency-key"));
+        return this.response(request,result.body,result.status);
+      }
+      if(method==="GET"&&path===apiPrefix+"/galaxy/bootstrap"){
+        const ctx=this.accountContext(request);
+        return this.response(request,this.galaxy.bootstrap(ctx.userId,url.searchParams.get("worldId")??undefined));
+      }
+      const galaxySystem=path.match(/^\/api\/v1\/galaxy\/systems\/([^/]+)$/);
+      if(method==="GET"&&galaxySystem){
+        const ctx=this.accountContext(request);
+        return this.response(request,this.galaxy.systemDetail(ctx.userId,this.part(galaxySystem[1])));
       }
 
       if(method==="GET"&&path===apiPrefix+"/auction/bootstrap")

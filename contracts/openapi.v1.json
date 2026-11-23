@@ -3831,6 +3831,218 @@
           }
         }
       }
+    },
+    "/api/v1/galaxy/systems": {
+      "post": {
+        "tags": [
+          "Galaxy"
+        ],
+        "operationId": "registerGalaxySystem",
+        "description": "Registers the authenticated player's single V1 sovereign star system. Server derives ownerUserId from Bearer Session Token, allocates and freezes systemSeed, starId, coordinates (enforcing minimum distance), full planet set, visual profiles, and server-only hidden resource profiles. Supports optional existingPlanet binding on first registration to preserve legacy local worldId, planetId, and Tile World worldSeed without overwriting the existing world seed. Retries for the same (userId, worldId) are idempotent; submitting a different worldId for an account that already owns a sovereign system fails with 409.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GalaxyRegisterSystemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay returning the already-registered sovereign star system for this (userId, worldId)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GalaxyRegisterSystemResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Newly created sovereign star system and initial planet set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GalaxyRegisterSystemResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer Session Token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Account already owns a different worldId, worldId/planetId already claimed, planet binding mismatch, or Idempotency-Key payload conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or disallowed request fields (e.g. client-supplied ownerUserId, xLy, yLy, or systemSeed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/galaxy/bootstrap": {
+      "get": {
+        "tags": [
+          "Galaxy"
+        ],
+        "operationId": "getGalaxyBootstrap",
+        "description": "Returns the authenticated player's Star Node and bounded nearby Star Nodes ordered by server Euclidean light-year distance. Does not include planet lists or hidden resources.",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Initial Galaxy Star Node snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GalaxyBootstrapResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer Session Token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Sovereign star system not found for this account/worldId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid worldId query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/galaxy/systems/{systemId}": {
+      "get": {
+        "tags": [
+          "Galaxy"
+        ],
+        "operationId": "getGalaxySystemDetail",
+        "description": "Returns the public System projection for a Star including its planets ordered by orbitIndex. Unscanned planets strictly return survey.status='unknown' and never expose hidden resource profiles.",
+        "parameters": [
+          {
+            "name": "systemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Star system projection with public planet summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GalaxySystemDetailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer Session Token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Star system not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid systemId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5841,6 +6053,476 @@
           "readyAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "GalaxyExistingPlanetBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "planetId",
+          "worldSeed"
+        ],
+        "properties": {
+          "planetId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          },
+          "worldSeed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        }
+      },
+      "GalaxyRegisterSystemRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "worldId"
+        ],
+        "properties": {
+          "worldId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+          },
+          "systemName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "existingPlanet": {
+            "$ref": "#/components/schemas/GalaxyExistingPlanetBinding"
+          }
+        }
+      },
+      "StarVisualProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "visualSeed",
+          "spectralClass",
+          "sizeVariant"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "visualSeed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "spectralClass": {
+            "type": "string",
+            "enum": [
+              "F",
+              "G",
+              "K",
+              "M"
+            ]
+          },
+          "sizeVariant": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PlanetVisualProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "visualSeed",
+          "waterIndex",
+          "vegetationIndex",
+          "reliefIndex",
+          "paletteKey",
+          "surfaceVariant"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "visualSeed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "waterIndex": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "vegetationIndex": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reliefIndex": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "paletteKey": {
+            "type": "string",
+            "enum": [
+              "temperate",
+              "ocean",
+              "dry",
+              "rocky",
+              "cold"
+            ]
+          },
+          "surfaceVariant": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PlanetResourceSignal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "richness"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "richness": {
+            "type": "string",
+            "enum": [
+              "trace",
+              "normal",
+              "rich"
+            ]
+          }
+        }
+      },
+      "PlanetSurveyState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "signals"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "scanned"
+                ]
+              },
+              "signals": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PlanetResourceSignal"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SystemPlanetProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "planetId",
+          "displayName",
+          "isActivePlanet",
+          "explorationStatus",
+          "orbitIndex",
+          "orbitRadiusNormalized",
+          "orbitPhase",
+          "visual",
+          "survey"
+        ],
+        "properties": {
+          "planetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isActivePlanet": {
+            "type": "boolean"
+          },
+          "explorationStatus": {
+            "type": "string",
+            "enum": [
+              "unexplored",
+              "explored"
+            ]
+          },
+          "orbitIndex": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "orbitRadiusNormalized": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "orbitPhase": {
+            "type": "number",
+            "minimum": 0
+          },
+          "visual": {
+            "$ref": "#/components/schemas/PlanetVisualProfile"
+          },
+          "survey": {
+            "$ref": "#/components/schemas/PlanetSurveyState"
+          },
+          "worldSeed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        }
+      },
+      "GalaxySystemProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "systemId",
+          "starId",
+          "starName",
+          "owner",
+          "position",
+          "distanceLy",
+          "relation",
+          "starVisual",
+          "federation",
+          "discovered"
+        ],
+        "properties": {
+          "systemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "starId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "worldId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "activePlanetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "starName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "userId",
+              "displayName"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "displayName": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "position": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "xLy",
+              "yLy"
+            ],
+            "properties": {
+              "xLy": {
+                "type": "number"
+              },
+              "yLy": {
+                "type": "number"
+              }
+            }
+          },
+          "distanceLy": {
+            "type": "number",
+            "minimum": 0
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "self",
+              "friendly",
+              "neutral",
+              "hostile",
+              "unknown"
+            ]
+          },
+          "starVisual": {
+            "$ref": "#/components/schemas/StarVisualProfile"
+          },
+          "planets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemPlanetProjection"
+            }
+          },
+          "federation": {
+            "nullable": true,
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "federationId",
+              "name"
+            ],
+            "properties": {
+              "federationId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "discovered": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GalaxyRegisterSystemResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "serverTime",
+          "galaxyRevision",
+          "created",
+          "system"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "galaxyRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "system": {
+            "$ref": "#/components/schemas/GalaxySystemProjection"
+          }
+        }
+      },
+      "GalaxyBootstrapResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "serverTime",
+          "galaxyRevision",
+          "self",
+          "systems"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "galaxyRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "self": {
+            "$ref": "#/components/schemas/GalaxySystemProjection"
+          },
+          "systems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GalaxySystemProjection"
+            }
+          }
+        }
+      },
+      "GalaxySystemDetailResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "serverTime",
+          "galaxyRevision",
+          "system"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "galaxyRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "system": {
+            "$ref": "#/components/schemas/GalaxySystemProjection"
           }
         }
       }

@@ -10,8 +10,9 @@ import p15Schema from "../../p15-schema.sql";
 import deliverySchema from "../../p15-delivery-schema.sql";
 import buildingGoldSchema from "../../p15-building-gold-schema.sql";
 import respecSchema from "../../p15-respec-schema.sql";
+import galaxySchema from "../../galaxy-schema.sql";
 
-export const WORKER_SCHEMA_VERSION=17;
+export const WORKER_SCHEMA_VERSION=18;
 
 const finalFinanceSchema=`
 CREATE TABLE p15_finance_records (
@@ -35,9 +36,20 @@ export function initializeWorkerSchema(database){
   const rows=database.db.prepare("SELECT version FROM farsoil_schema_migrations ORDER BY version").all();
   if(rows.length){
     const current=Number(rows.at(-1).version);
-    if(current!==WORKER_SCHEMA_VERSION)
-      throw new Error("Unsupported FARSOIL Worker schema version "+current);
-    return current;
+    if(current===WORKER_SCHEMA_VERSION)return current;
+    if(current===17){
+      database.transaction(()=>{
+        database.db.exec("PRAGMA foreign_keys=OFF");
+        database.db.exec(galaxySchema);
+        const violations=database.db.prepare("PRAGMA foreign_key_check").all();
+        if(violations.length)throw new Error("FARSOIL Worker schema migration violated foreign keys");
+        database.db.exec("PRAGMA foreign_keys=ON");
+        database.db.prepare("INSERT INTO farsoil_schema_migrations(version,applied_at_ms) VALUES(?,?)")
+          .run(WORKER_SCHEMA_VERSION,Date.now());
+      });
+      return WORKER_SCHEMA_VERSION;
+    }
+    throw new Error("Unsupported FARSOIL Worker schema version "+current);
   }
   database.transaction(()=>{
     database.db.exec("PRAGMA foreign_keys=OFF");
@@ -68,6 +80,7 @@ export function initializeWorkerSchema(database){
     database.db.exec(deliverySchema);
     database.db.exec(buildingGoldSchema);
     database.db.exec(respecSchema);
+    database.db.exec(galaxySchema);
     const violations=database.db.prepare("PRAGMA foreign_key_check").all();
     if(violations.length)throw new Error("FARSOIL Worker schema violated foreign keys");
     database.db.exec("PRAGMA foreign_keys=ON");

@@ -2,7 +2,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const AUCTION_SCHEMA_VERSION=17 as const;
+export const AUCTION_SCHEMA_VERSION=18 as const;
 type Row = Record<string, unknown>;
 
 export class AuctionDatabase {
@@ -30,6 +30,7 @@ export class AuctionDatabase {
     const deliverySchema=readFileSync(new URL("../p15-delivery-schema.sql",import.meta.url),"utf8");
     const buildingGoldSchema=readFileSync(new URL("../p15-building-gold-schema.sql",import.meta.url),"utf8");
     const respecSchema=readFileSync(new URL("../p15-respec-schema.sql",import.meta.url),"utf8");
+    const galaxySchema=readFileSync(new URL("../galaxy-schema.sql",import.meta.url),"utf8");
     try {
       // Legacy guest Sessions are not a supported login format; migrate only persistent data.
       this.db.exec(schema);
@@ -95,6 +96,7 @@ export class AuctionDatabase {
         if(v<15)this.db.exec(deliverySchema);
         if(v<16)this.db.exec(buildingGoldSchema);
         if(v<17)this.db.exec(respecSchema);
+        if(v<18)this.db.exec(galaxySchema);
         if(this.db.prepare("PRAGMA foreign_key_check").all().length)
           throw new Error("Account database migration violated foreign keys");
         this.db.exec("PRAGMA user_version="+AUCTION_SCHEMA_VERSION);

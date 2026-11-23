@@ -11,8 +11,9 @@ import {parseAchievementBatch} from "./achievements/events.ts";
 import {SteamAchievementSync} from "./achievements/steamSync.ts";
 import {loadDropConfig} from "./drops/config.ts";
 import {DropEngine} from "./drops/engine.ts";
+import {GalaxyService} from "./galaxy.ts";
 
-export type ServerOptions = { allowedOrigins?: readonly string[]; enableSweep?: boolean; accountAuth?:AccountAuth; providerAuth?:ProviderAuth; achievementEngine?:AchievementEngine;steamSync?:SteamAchievementSync;dropEngine?:DropEngine;p15Economy?:P15Economy };
+export type ServerOptions = { allowedOrigins?: readonly string[]; enableSweep?: boolean; accountAuth?:AccountAuth; providerAuth?:ProviderAuth; achievementEngine?:AchievementEngine;steamSync?:SteamAchievementSync;dropEngine?:DropEngine;p15Economy?:P15Economy;galaxyService?:GalaxyService };
 
 const hash = (s:string)=>createHash("sha256").update(s).digest("hex");
 export function createAuctionServer(engine:AuctionEngine, opts:ServerOptions={}):FastifyInstance {
@@ -20,6 +21,7 @@ export function createAuctionServer(engine:AuctionEngine, opts:ServerOptions={})
   const originList=new Set(opts.allowedOrigins??[]);
   const accounts=opts.accountAuth??new AccountAuth(engine.store);
   const economy=opts.p15Economy??new P15Economy(engine.store,undefined,engine.clock);
+  const galaxy=opts.galaxyService??new GalaxyService(engine.store,accounts.profiles,undefined,engine.clock);
   engine.setFormalEconomy(economy);
   const providers=opts.providerAuth??new ProviderAuth(engine.store,accounts);
   const achievements=opts.achievementEngine??new AchievementEngine(engine.store,loadAchievementConfig());
@@ -437,6 +439,19 @@ export function createAuctionServer(engine:AuctionEngine, opts:ServerOptions={})
   });
   app.post("/api/v1/economy/auction/listings/:id/cancel",async(req,reply)=>{
     const result=formalWrite(req,"cancel",id(req));return reply.code(result.code).send(result.body);
+  });
+  app.post("/api/v1/galaxy/systems",async(req,reply)=>{
+    const ctx=accountContext(req);
+    const result=galaxy.registerSystem(ctx.userId,req.body,req.headers["idempotency-key"]);
+    return reply.code(result.status).send(result.body);
+  });
+  app.get("/api/v1/galaxy/bootstrap",async(req)=>{
+    const ctx=accountContext(req);
+    return galaxy.bootstrap(ctx.userId,query(req).worldId);
+  });
+  app.get("/api/v1/galaxy/systems/:systemId",async(req)=>{
+    const ctx=accountContext(req);
+    return galaxy.systemDetail(ctx.userId,String((req.params as {systemId:string}).systemId));
   });
   app.get("/api/v1/auction/bootstrap",async(req)=>engine.bootstrap(context(req)));
   app.get("/api/v1/auction/listings",async(req)=>engine.listings(context(req),query(req),locale(req)));
