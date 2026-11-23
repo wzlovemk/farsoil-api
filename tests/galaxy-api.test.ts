@@ -29,6 +29,66 @@ const DEFAULT_MAP_OPTIONS: BoundMapOptions = {
   forestCoveragePct: 45,
 };
 
+test("GAL-01C: initial planet is server-selected, preserves chosen terrain and replays across Node/Worker", async () => {
+  for (const create of [createNodeFixture, createWorkerRouterFixture]) {
+    const f = create();
+    try {
+      const owner = await f.registerAccount("gal-c-initial");
+      const other = await f.registerAccount("gal-c-observer");
+      const mapOptions = {...DEFAULT_MAP_OPTIONS, mapSize: "small", resourceDensity: "rich",
+        resourceDistribution: {oil: "balanced", ore: "clustered"}};
+      const body = {worldId: "world:c-initial", initialPlanet: {mapOptionsVersion: 1, mapOptions}};
+      const created = await f.request("POST", "/api/v1/galaxy/systems", owner.token, body, "gal-c-initial-0001");
+      assert.equal(created.status, 201, JSON.stringify(created.data));
+      const system = created.data.system;
+      const active = system.planets.find((p: any) => p.planetId === system.activePlanetId);
+      assert.ok(active?.isActivePlanet);
+      assert.equal(active.explorationStatus, "explored");
+      assert.equal(active.mapOptionsVersion, 1);
+      assert.deepEqual(active.mapOptions, mapOptions);
+      assert.deepEqual(active.visual, deriveBoundPlanetVisualProfile(loadGalaxyConfig(), active.worldSeed, active.planetId, mapOptions as BoundMapOptions, 1));
+      assert.ok(system.planets.filter((p: any) => p !== active).every((p: any) => p.explorationStatus === "unexplored" && !p.mapOptions && p.worldSeed === undefined));
+      const replay = await f.request("POST", "/api/v1/galaxy/systems", owner.token, body, "gal-c-initial-0001");
+      assert.equal(replay.status, 201);
+      assert.deepEqual(replay.data.system, system);
+      const retry = await f.request("POST", "/api/v1/galaxy/systems", owner.token, body);
+      assert.equal(retry.status, 200);
+      assert.deepEqual(retry.data.system, system);
+      const conflict = await f.request("POST", "/api/v1/galaxy/systems", owner.token,
+        {...body, initialPlanet: {mapOptionsVersion: 1, mapOptions: {...mapOptions, forestCoveragePct: 0}}});
+      assert.equal(conflict.status, 409);
+      assert.equal(conflict.data.error.code, "PLANET_BINDING_CONFLICT");
+      const forged = await f.request("POST", "/api/v1/galaxy/systems", other.token,
+        {...body, worldId: "world:c-forged", initialPlanet: {...body.initialPlanet, worldSeed: 99}});
+      assert.equal(forged.status, 422);
+      const publicDetail = await f.request("GET", "/api/v1/galaxy/systems/" + system.systemId, other.token);
+      assert.ok(publicDetail.data.system.planets.every((p: any) => !p.mapOptions && p.worldSeed === undefined));
+      assertNoSecretsOrHiddenResourcesLeaked(publicDetail.data);
+    } finally { await f.close(); }
+  }
+});
+
+test("GAL-01C: legacy insecure systems are preserved but cannot expose reversible resource seeds", async () => {
+  const f = createNodeFixture();
+  try {
+    const a = await f.registerAccount("gal-c-legacy-a");
+    const b = await f.registerAccount("gal-c-legacy-b");
+    const old = await f.request("POST", "/api/v1/galaxy/systems", a.token, {worldId: "world:c-old"}, "gal-c-legacy-0001");
+    await f.request("POST", "/api/v1/galaxy/systems", b.token, {worldId: "world:c-safe"});
+    f.db.db.prepare("UPDATE galaxy_systems SET resource_secret_version=0 WHERE system_id=?").run(old.data.system.systemId);
+    for (const path of ["/api/v1/galaxy/bootstrap?worldId=world:c-old", "/api/v1/galaxy/systems/" + old.data.system.systemId]) {
+      const response = await f.request("GET", path, a.token);
+      assert.equal(response.status, 409);
+      assert.equal(response.data.error.code, "GALAXY_MIGRATION_REQUIRED");
+    }
+    const staleReplay = await f.request("POST", "/api/v1/galaxy/systems", a.token, {worldId: "world:c-old"}, "gal-c-legacy-0001");
+    assert.equal(staleReplay.status, 409);
+    const visible = await f.request("GET", "/api/v1/galaxy/bootstrap", b.token);
+    assert.ok(!visible.data.systems.some((s: any) => s.systemId === old.data.system.systemId));
+    assert.equal((f.db.db.prepare("SELECT COUNT(*) AS n FROM galaxy_systems").get() as any).n, 2);
+  } finally { await f.close(); }
+});
+
 const FNV_PRIME_INV = 0x359c449b; // 16777619^-1 mod 2^32
 
 /** Exact audit exploit reproduction: recovers 32-bit systemSeed from public starVisual.visualSeed + systemId. */

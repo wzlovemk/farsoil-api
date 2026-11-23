@@ -29,6 +29,10 @@ export type ExistingPlanetInput = Readonly<{
   mapOptionsVersion: number;
   mapOptions: BoundMapOptions;
 }>;
+export type InitialPlanetInput = Readonly<{
+  mapOptionsVersion: number;
+  mapOptions: BoundMapOptions;
+}>;
 
 export type GalaxyConfig = Readonly<{
   schemaVersion: number;
@@ -138,6 +142,8 @@ export type SystemPlanetProjection = Readonly<{
   survey: PlanetSurveyProjection;
   /** Exposed only for the authenticated owner's explored planet(s) so client Tile World preserves its authoritative seed. */
   worldSeed?: number;
+  mapOptionsVersion?: number;
+  mapOptions?: BoundMapOptions;
 }>;
 
 export type GalaxySystemProjection = Readonly<{
@@ -201,7 +207,7 @@ const RESOURCE_SECRET_HEX_PATTERN = /^[0-9a-f]{64}$/i;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,179}$/;
 const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/;
 const CONTROL_PATTERN = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
-const ALLOWED_REGISTER_KEYS = new Set(["worldId", "systemName", "existingPlanet"]);
+const ALLOWED_REGISTER_KEYS = new Set(["worldId", "systemName", "existingPlanet", "initialPlanet"]);
 const ALLOWED_EXISTING_PLANET_KEYS = new Set(["planetId", "worldSeed", "mapOptionsVersion", "mapOptions"]);
 const REQUIRED_MAP_OPTION_KEYS = [
   "mountainCoveragePct",
@@ -474,6 +480,7 @@ export function generateDeterministicSystemBodies(
   resourceSecretHex: string,
   resourceSecretVersion: number,
   existingPlanet?: ExistingPlanetInput,
+  initialPlanet?: InitialPlanetInput,
 ): {
   starVisual: StarVisualProfile;
   activePlanetId: string;
@@ -540,16 +547,17 @@ export function generateDeterministicSystemBodies(
     let mapOptionsJson: string | null = null;
     let visualSource: "system_seed" | "map_options" = "system_seed";
 
-    if (isBoundExisting) {
+    if (isBoundExisting || (isInitial && initialPlanet)) {
+      const bound = isBoundExisting ? existingPlanet : initialPlanet!;
       visual = deriveBoundPlanetVisualProfile(
         config,
-        existingPlanet.worldSeed,
-        existingPlanet.planetId,
-        existingPlanet.mapOptions,
+        planetSeed,
+        planetId,
+        bound.mapOptions,
         1,
       );
-      mapOptionsVersion = existingPlanet.mapOptionsVersion;
-      mapOptionsJson = JSON.stringify(existingPlanet.mapOptions);
+      mapOptionsVersion = bound.mapOptionsVersion;
+      mapOptionsJson = JSON.stringify(bound.mapOptions);
       visualSource = "map_options";
     } else {
       // Independent display-only visual stream — NEVER touches hidden resource secret or deposits.
@@ -884,9 +892,10 @@ export class GalaxyService {
   }
 
   private projectPlanets(systemId: string, activePlanetId: string, isSelf: boolean): SystemPlanetProjection[] {
-    // Deliberately selects only public planet columns; never selects hidden_resource_profile_json or map_options_json.
+    // Hidden deposits are never queried. Tile generation inputs are owner-only.
     const rows = this.all(
       "SELECT planet_id, orbit_index, display_name, orbit_radius_normalized, orbit_phase, planet_seed, visual_json, exploration_status, survey_status, survey_result_json " +
+        (isSelf ? ", map_options_version, map_options_json " : "") +
         "FROM galaxy_planets WHERE system_id = ? ORDER BY orbit_index ASC",
       systemId,
     );
@@ -909,6 +918,9 @@ export class GalaxyService {
         visual: JSON.parse(String(row.visual_json)) as PlanetVisualProfile,
         survey,
         ...(isSelf && explorationStatus === "explored" ? {worldSeed: Number(row.planet_seed)} : {}),
+        ...(isSelf && explorationStatus === "explored" && typeof row.map_options_json === "string"
+          ? {mapOptionsVersion: Number(row.map_options_version), mapOptions: JSON.parse(row.map_options_json) as BoundMapOptions}
+          : {}),
       };
     });
   }
@@ -919,6 +931,9 @@ export class GalaxyService {
     origin: {xLy: number; yLy: number} | null,
     includePlanets: boolean,
   ): GalaxySystemProjection {
+    if (Number(row.resource_secret_version) !== this.config.resourceSecretVersion) {
+      throw new ApiError(409, "GALAXY_MIGRATION_REQUIRED", "Legacy galaxy requires an explicit resource migration before it can be exposed");
+    }
     const ownerUserId = String(row.owner_user_id);
     const isSelf = ownerUserId === requesterUserId;
     const xLy = Number(row.x_ly);
@@ -952,14 +967,14 @@ export class GalaxyService {
   private selectPublicSystemById(systemId: string): Row | undefined {
     // Deliberately excludes system_seed and resource_secret_hex from read projections.
     return this.one(
-      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id FROM galaxy_systems WHERE system_id = ?",
+      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id, resource_secret_version FROM galaxy_systems WHERE system_id = ?",
       systemId,
     );
   }
 
   private selectPublicSystemByOwner(userId: string): Row | undefined {
     return this.one(
-      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id FROM galaxy_systems WHERE owner_user_id = ?",
+      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id, resource_secret_version FROM galaxy_systems WHERE owner_user_id = ?",
       userId,
     );
   }
@@ -980,8 +995,25 @@ export class GalaxyService {
     const worldId = this.validateId(input.worldId, "worldId", "INVALID_WORLD");
     const systemName = this.validateSystemName(input.systemName);
     const existingPlanet = this.validateExistingPlanet(input.existingPlanet);
+    let initialPlanet: InitialPlanetInput | undefined;
+    if (input.initialPlanet !== undefined) {
+      const value = input.initialPlanet;
+      if (existingPlanet || !value || typeof value !== "object" || Array.isArray(value) ||
+        Object.keys(value).length !== 2 || Object.keys(value).some(k => k !== "mapOptionsVersion" && k !== "mapOptions")) {
+        throw new ApiError(422, "INVALID_INITIAL_PLANET", "initialPlanet requires mapOptionsVersion and mapOptions and cannot accompany existingPlanet");
+      }
+      const record = value as Record<string, unknown>;
+      if (record.mapOptionsVersion !== this.config.mapOptionsVersion) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", "Unsupported mapOptionsVersion");
+      }
+      const mapOptions = this.validateBoundMapOptions(record.mapOptions);
+      if (!mapOptions.mapSize || !mapOptions.resourceDensity || !mapOptions.resourceDistribution) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", "New planets require fully resolved MAP-02 options");
+      }
+      initialPlanet = {mapOptionsVersion: this.config.mapOptionsVersion, mapOptions};
+    }
     const idempotencyKey = this.parseIdempotencyKey(idempotencyHeader);
-    const canonicalBody = {worldId, systemName, ...(existingPlanet ? {existingPlanet} : {})};
+    const canonicalBody = {worldId, systemName, ...(existingPlanet ? {existingPlanet} : {}), ...(initialPlanet ? {initialPlanet} : {})};
     const bodyHash = sha256(canonicalBody);
 
     return this.store.transaction(() => {
@@ -1029,6 +1061,9 @@ export class GalaxyService {
 
       const own = this.selectPublicSystemByOwner(userId);
       if (own) {
+        if (Number(own.resource_secret_version) !== this.config.resourceSecretVersion) {
+          throw new ApiError(409, "GALAXY_MIGRATION_REQUIRED", "Legacy galaxy requires an explicit resource migration");
+        }
         if (String(own.world_id) !== worldId) {
           throw new ApiError(
             409,
@@ -1055,6 +1090,13 @@ export class GalaxyService {
               "PLANET_BINDING_CONFLICT",
               "Existing planet identity, worldSeed, or mapOptions does not match the bound sovereign system",
             );
+          }
+        }
+        if (initialPlanet) {
+          const active = this.one("SELECT map_options_version, map_options_json FROM galaxy_planets WHERE system_id = ? AND planet_id = ?", String(own.system_id), String(own.active_planet_id));
+          if (!active || Number(active.map_options_version) !== initialPlanet.mapOptionsVersion ||
+            String(active.map_options_json) !== JSON.stringify(initialPlanet.mapOptions)) {
+            throw new ApiError(409, "PLANET_BINDING_CONFLICT", "Initial planet options do not match the registered world");
           }
         }
         const system = this.projectSystem(
@@ -1118,6 +1160,7 @@ export class GalaxyService {
         resourceSecretHex,
         resourceSecretVersion,
         existingPlanet,
+        initialPlanet,
       );
 
       this.exec(
@@ -1218,8 +1261,9 @@ export class GalaxyService {
     const self = this.projectSystem(own, userId, origin, false);
 
     const rows = this.all(
-      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id " +
-        "FROM galaxy_systems ORDER BY ((x_ly - ?) * (x_ly - ?) + (y_ly - ?) * (y_ly - ?)) ASC, system_id ASC LIMIT ?",
+      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id, resource_secret_version " +
+        "FROM galaxy_systems WHERE resource_secret_version = ? ORDER BY ((x_ly - ?) * (x_ly - ?) + (y_ly - ?) * (y_ly - ?)) ASC, system_id ASC LIMIT ?",
+      this.config.resourceSecretVersion,
       origin.xLy,
       origin.xLy,
       origin.yLy,
