@@ -3,6 +3,8 @@
   "configId": "galaxy-v1",
   "status": "PROVISIONAL_NOT_BALANCED",
   "generationVersion": 1,
+  "resourceSecretVersion": 1,
+  "mapOptionsVersion": 1,
   "starVisualVersion": 1,
   "planetVisualVersion": 1,
   "systemName": {
@@ -53,7 +55,41 @@
     "indexRange": [
       0.12,
       0.92
-    ]
+    ],
+    "mapOptionRanges": {
+      "mountainCoveragePct": [
+        0,
+        30
+      ],
+      "riverCoveragePct": [
+        0,
+        10
+      ],
+      "lakeCoveragePct": [
+        0,
+        15
+      ],
+      "forestCoveragePct": [
+        0,
+        50
+      ]
+    },
+    "profileMapping": {
+      "maxMountainPct": 30,
+      "maxRiverPct": 10,
+      "maxLakePct": 15,
+      "maxForestPct": 50,
+      "surfaceVariants": 4,
+      "thresholds": {
+        "oceanMinWater": 0.68,
+        "rockyMinRelief": 0.67,
+        "rockyMaxVegetation": 0.35,
+        "dryMaxWater": 0.28,
+        "dryMaxVegetation": 0.35,
+        "coldMaxVegetation": 0.2,
+        "coldMinWater": 0.45
+      }
+    }
   },
   "hiddenResources": {
     "schemaVersion": 1,

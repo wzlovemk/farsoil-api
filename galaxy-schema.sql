@@ -1,4 +1,5 @@
--- GAL-01B / SQLite v18: sovereign star systems, equal planets, hidden resource profiles, and registration idempotency.
+-- GAL-01B / SQLite v19: sovereign star systems, equal planets, isolated 256-bit hidden resource secrets,
+-- bound planet MAP-02 metadata, and live-reprojected registration idempotency.
 -- V1 enforces one sovereign star system per formal userId, one formal owner per starId, and one system per worldId.
 -- No permanent main_planet_id exists; active_planet_id is the current active planet pointer only.
 CREATE TABLE IF NOT EXISTS galaxy_meta (
@@ -15,6 +16,8 @@ CREATE TABLE IF NOT EXISTS galaxy_systems (
   star_name TEXT NOT NULL,
   system_seed INTEGER NOT NULL CHECK(system_seed >= 0 AND system_seed <= 4294967295),
   generation_version INTEGER NOT NULL CHECK(generation_version >= 1),
+  resource_secret_hex TEXT,
+  resource_secret_version INTEGER NOT NULL DEFAULT 0 CHECK(resource_secret_version >= 0),
   x_ly REAL NOT NULL,
   y_ly REAL NOT NULL,
   sector_x INTEGER NOT NULL,
@@ -22,7 +25,8 @@ CREATE TABLE IF NOT EXISTS galaxy_systems (
   star_visual_json TEXT NOT NULL,
   active_planet_id TEXT NOT NULL,
   created_at_ms INTEGER NOT NULL,
-  updated_at_ms INTEGER NOT NULL
+  updated_at_ms INTEGER NOT NULL,
+  CHECK(resource_secret_version = 0 OR (resource_secret_hex IS NOT NULL AND length(resource_secret_hex) = 64))
 );
 CREATE INDEX IF NOT EXISTS galaxy_systems_sector_idx ON galaxy_systems(sector_x, sector_y);
 CREATE INDEX IF NOT EXISTS galaxy_systems_created_idx ON galaxy_systems(created_at_ms, system_id);
@@ -35,6 +39,9 @@ CREATE TABLE IF NOT EXISTS galaxy_planets (
   orbit_radius_normalized REAL NOT NULL CHECK(orbit_radius_normalized > 0 AND orbit_radius_normalized <= 1),
   orbit_phase REAL NOT NULL CHECK(orbit_phase >= 0 AND orbit_phase < 6.283185307179587),
   planet_seed INTEGER NOT NULL CHECK(planet_seed >= 0 AND planet_seed <= 4294967295),
+  map_options_version INTEGER,
+  map_options_json TEXT,
+  visual_source TEXT NOT NULL DEFAULT 'system_seed' CHECK(visual_source IN ('system_seed', 'map_options')),
   visual_json TEXT NOT NULL,
   hidden_resource_profile_json TEXT NOT NULL,
   exploration_status TEXT NOT NULL CHECK(exploration_status IN ('unexplored', 'explored')),
@@ -43,7 +50,8 @@ CREATE TABLE IF NOT EXISTS galaxy_planets (
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL,
   UNIQUE(system_id, orbit_index),
-  CHECK(survey_status = 'unknown' OR survey_result_json IS NOT NULL)
+  CHECK(survey_status = 'unknown' OR survey_result_json IS NOT NULL),
+  CHECK((map_options_version IS NULL AND map_options_json IS NULL) OR (map_options_version >= 1 AND map_options_json IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS galaxy_planets_system_idx ON galaxy_planets(system_id, orbit_index);
 
@@ -53,6 +61,7 @@ CREATE TABLE IF NOT EXISTS galaxy_requests (
   operation TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
   body_hash TEXT NOT NULL,
+  system_id TEXT REFERENCES galaxy_systems(system_id) ON DELETE RESTRICT,
   status_code INTEGER NOT NULL,
   response_json TEXT NOT NULL,
   created_at_ms INTEGER NOT NULL,

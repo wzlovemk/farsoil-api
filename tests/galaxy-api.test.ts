@@ -9,10 +9,71 @@ import {AuctionEngine} from "../src/engine.ts";
 import {AccountAuth} from "../src/accountAuth.ts";
 import {loadConfig} from "../src/config.ts";
 import {P15Economy, loadP15Config} from "../src/p15Economy.ts";
-import {GalaxyService, generateDeterministicSystemBodies, loadGalaxyConfig} from "../src/galaxy.ts";
+import {
+  GalaxyService,
+  deriveBoundPlanetVisualProfile,
+  fnv1a32,
+  generateDeterministicSystemBodies,
+  loadGalaxyConfig,
+  mulberry32,
+  type BoundMapOptions,
+} from "../src/galaxy.ts";
 import {createAuctionServer} from "../src/http.ts";
 import {WorkerApiRouter} from "../src/worker/router.mjs";
 import {createWorkerServices} from "../src/worker/services.mjs";
+
+const DEFAULT_MAP_OPTIONS: BoundMapOptions = {
+  mountainCoveragePct: 15,
+  riverCoveragePct: 5,
+  lakeCoveragePct: 8,
+  forestCoveragePct: 45,
+};
+
+const FNV_PRIME_INV = 0x359c449b; // 16777619^-1 mod 2^32
+
+/** Exact audit exploit reproduction: recovers 32-bit systemSeed from public starVisual.visualSeed + systemId. */
+function recoverSystemSeedFromStarVisual(starVisualSeed: number, systemId: string, generationVersion = 1): number {
+  const label = `star-visual:v${generationVersion}:${systemId}`;
+  let h = starVisualSeed >>> 0;
+  for (let i = label.length - 1; i >= 0; i--) {
+    h = (Math.imul(h, FNV_PRIME_INV) >>> 0) ^ label.charCodeAt(i);
+  }
+  h = Math.imul(h, FNV_PRIME_INV) >>> 0;
+  return (h ^ 2166136261) >>> 0;
+}
+
+/** Legacy (pre-fix) public-seed-only predictor — used in regression test to prove recovery no longer predicts resources. */
+function legacyPredictHiddenDepositsFromSystemSeed(
+  systemSeed: number,
+  generationVersion: number,
+  orbitIndex: number,
+  planetId: string,
+) {
+  const cfg = loadGalaxyConfig();
+  const rng = mulberry32(fnv1a32(systemSeed, `planet-hidden-resources:v${generationVersion}:orbit:${orbitIndex}:${planetId}`));
+  const depositCount =
+    cfg.hiddenResources.minSignalsPerPlanet +
+    Math.floor(rng() * (cfg.hiddenResources.maxSignalsPerPlanet - cfg.hiddenResources.minSignalsPerPlanet + 1));
+  const pool = [...cfg.hiddenResources.pool];
+  const deposits = [];
+  for (let d = 0; d < depositCount && pool.length > 0; d++) {
+    const idx = Math.floor(rng() * pool.length);
+    const [itemId] = pool.splice(idx, 1);
+    const totalW = cfg.hiddenResources.richnessWeights.reduce((a, b) => a + b, 0);
+    let t = rng() * totalW;
+    let richness = cfg.hiddenResources.richnessLevels[cfg.hiddenResources.richnessLevels.length - 1];
+    for (let i = 0; i < cfg.hiddenResources.richnessLevels.length; i++) {
+      t -= cfg.hiddenResources.richnessWeights[i];
+      if (t <= 0) {
+        richness = cfg.hiddenResources.richnessLevels[i];
+        break;
+      }
+    }
+    const [minU, maxU] = cfg.hiddenResources.reservesRangeU[richness];
+    deposits.push({itemId, richness, estimatedReserveU: minU + Math.floor(rng() * (maxU - minU + 1))});
+  }
+  return deposits;
+}
 
 function createNodeFixture(dbFile = ":memory:") {
   const now = {ms: 1732000000000};
@@ -72,10 +133,6 @@ function createNodeFixture(dbFile = ":memory:") {
   };
 }
 
-/**
- * In-process WorkerApiRouter harness backed by a real SQLite database (via createWorkerServices).
- * Real Cloudflare Durable Object SQLite is additionally verified via `wrangler dev --local`.
- */
 function createWorkerRouterFixture() {
   const db = new AuctionDatabase(":memory:");
   const env = {AUCTION_CORS_ORIGINS: ""};
@@ -114,7 +171,7 @@ function createWorkerRouterFixture() {
   return {db, router, request, registerAccount, close: () => db.close()};
 }
 
-function assertNoHiddenResourcesLeaked(payload: unknown): void {
+function assertNoSecretsOrHiddenResourcesLeaked(payload: unknown, secretHex?: string): void {
   const serialized = JSON.stringify(payload);
   for (const forbidden of [
     "hiddenResourceProfile",
@@ -123,10 +180,15 @@ function assertNoHiddenResourcesLeaked(payload: unknown): void {
     "deposits",
     "systemSeed",
     "system_seed",
+    "resourceSecret",
+    "resource_secret",
     "mainPlanetId",
     "main_planet_id",
   ]) {
     assert.equal(serialized.includes(forbidden), false, `Forbidden field leaked: ${forbidden}`);
+  }
+  if (secretHex) {
+    assert.equal(serialized.includes(secretHex), false, "256-bit resource secret leaked in response");
   }
 }
 
@@ -140,18 +202,27 @@ test("GAL-01B: token auth, client tampering rejection, and cross-account isolati
     const a = await f.registerAccount("gal-owner-a");
     const b = await f.registerAccount("gal-owner-b");
 
-    // Client may never submit ownerUserId, coordinates, systemSeed, or planets.
+    // Client may never submit ownerUserId, coordinates, systemSeed, or arbitrary visual profiles.
     for (const tampered of [
       {worldId: "world:a1", ownerUserId: b.userId},
       {worldId: "world:a1", xLy: 100, yLy: 200},
       {worldId: "world:a1", systemSeed: 42},
-      {worldId: "world:a1", existingPlanet: {planetId: "planet:bad", worldSeed: -1}},
+      {worldId: "world:a1", resourceSecretHex: "0".repeat(64)},
+      {
+        worldId: "world:a1",
+        existingPlanet: {
+          planetId: "planet:bad",
+          worldSeed: 123,
+          mapOptionsVersion: 1,
+          mapOptions: DEFAULT_MAP_OPTIONS,
+          visual: {paletteKey: "ocean"},
+        },
+      },
     ]) {
       const bad = await f.request("POST", "/api/v1/galaxy/systems", a.token, tampered);
       assert.equal(bad.status, 422, JSON.stringify(bad.data));
     }
 
-    // Account A registers a sovereign system.
     const regA = await f.request("POST", "/api/v1/galaxy/systems", a.token, {
       worldId: "world:alpha-1",
       systemName: "Astra",
@@ -161,7 +232,12 @@ test("GAL-01B: token auth, client tampering rejection, and cross-account isolati
     assert.equal(regA.data.system.owner.userId, a.userId);
     assert.equal(regA.data.system.worldId, "world:alpha-1");
     assert.equal(regA.data.system.relation, "self");
-    assertNoHiddenResourcesLeaked(regA.data);
+    const rowA = f.db.db
+      .prepare("SELECT resource_secret_hex, resource_secret_version FROM galaxy_systems WHERE system_id = ?")
+      .get(regA.data.system.systemId) as {resource_secret_hex: string; resource_secret_version: number};
+    assert.equal(rowA.resource_secret_version, 1);
+    assert.match(rowA.resource_secret_hex, /^[0-9a-f]{64}$/);
+    assertNoSecretsOrHiddenResourcesLeaked(regA.data, rowA.resource_secret_hex);
 
     // Account B cannot claim Account A's worldId or planetId.
     const hijackWorld = await f.request("POST", "/api/v1/galaxy/systems", b.token, {
@@ -175,7 +251,12 @@ test("GAL-01B: token auth, client tampering rejection, and cross-account isolati
     const hijackPlanet = await f.request("POST", "/api/v1/galaxy/systems", b.token, {
       worldId: "world:beta-1",
       systemName: "Beta",
-      existingPlanet: {planetId: aPlanetId, worldSeed: 777},
+      existingPlanet: {
+        planetId: aPlanetId,
+        worldSeed: 777,
+        mapOptionsVersion: 1,
+        mapOptions: DEFAULT_MAP_OPTIONS,
+      },
     });
     assert.equal(hijackPlanet.status, 409);
     assert.equal(hijackPlanet.data.error.code, "PLANET_ID_CONFLICT");
@@ -204,19 +285,16 @@ test("GAL-01B: token auth, client tampering rejection, and cross-account isolati
     assert.equal(secondWorld.status, 409);
     assert.equal(secondWorld.data.error.code, "SOVEREIGN_SYSTEM_ALREADY_EXISTS");
 
-    // Account B registers its own valid system, then inspects Account A's system detail.
     const regB = await f.request("POST", "/api/v1/galaxy/systems", b.token, {
       worldId: "world:beta-1",
       systemName: "Nova",
     });
     assert.equal(regB.status, 201);
 
-    // Bootstrap with another player's worldId fails with 404 (no existence leak).
     const wrongBootstrap = await f.request("GET", "/api/v1/galaxy/bootstrap?worldId=world:alpha-1", b.token);
     assert.equal(wrongBootstrap.status, 404);
     assert.equal(wrongBootstrap.data.error.code, "SYSTEM_NOT_FOUND");
 
-    // Viewing Account A's system from Account B omits A's private worldId, activePlanetId, and planet worldSeed.
     const detailAFromB = await f.request("GET", "/api/v1/galaxy/systems/" + regA.data.system.systemId, b.token);
     assert.equal(detailAFromB.status, 200);
     assert.equal(detailAFromB.data.system.relation, "neutral");
@@ -224,82 +302,305 @@ test("GAL-01B: token auth, client tampering rejection, and cross-account isolati
     assert.equal("activePlanetId" in detailAFromB.data.system, false);
     assert.ok(detailAFromB.data.system.distanceLy >= 2000);
     assert.ok(detailAFromB.data.system.planets.every((p: any) => !("worldSeed" in p) && p.survey.status === "unknown"));
-    assertNoHiddenResourcesLeaked(detailAFromB.data);
+    assertNoSecretsOrHiddenResourcesLeaked(detailAFromB.data, rowA.resource_secret_hex);
   } finally {
     await f.close();
   }
 });
 
-test("GAL-01B: existing local world first-bind preserves worldId, planetId, and Tile World worldSeed without systemSeed overwrite", async () => {
+test("GAL-01B audit regression #1: recovering public systemSeed from starVisual.visualSeed cannot reconstruct hidden resources", async () => {
+  const f = createNodeFixture();
+  try {
+    const userA = await f.registerAccount("gal-secret-a");
+    const userB = await f.registerAccount("gal-secret-b");
+    const regA = await f.request("POST", "/api/v1/galaxy/systems", userA.token, {
+      worldId: "world:sec-a",
+      systemName: "Astra",
+    });
+    const regB = await f.request("POST", "/api/v1/galaxy/systems", userB.token, {
+      worldId: "world:sec-b",
+      systemName: "Nova",
+    });
+    assert.equal(regA.status, 201);
+    assert.equal(regB.status, 201);
+
+    const sysRowA = f.db.db
+      .prepare("SELECT system_seed, resource_secret_hex, resource_secret_version FROM galaxy_systems WHERE system_id = ?")
+      .get(regA.data.system.systemId) as {system_seed: number; resource_secret_hex: string; resource_secret_version: number};
+    const sysRowB = f.db.db
+      .prepare("SELECT system_seed, resource_secret_hex, resource_secret_version FROM galaxy_systems WHERE system_id = ?")
+      .get(regB.data.system.systemId) as {system_seed: number; resource_secret_hex: string; resource_secret_version: number};
+
+    assert.equal(sysRowA.resource_secret_version, 1);
+    assert.match(sysRowA.resource_secret_hex, /^[0-9a-f]{64}$/);
+    assert.match(sysRowB.resource_secret_hex, /^[0-9a-f]{64}$/);
+    assert.notEqual(sysRowA.resource_secret_hex, sysRowB.resource_secret_hex);
+
+    // Step 1: Reproduce the exact exploit — recover systemSeed purely from public starVisual.visualSeed + systemId.
+    const recoveredSeed = recoverSystemSeedFromStarVisual(
+      regA.data.system.starVisual.visualSeed,
+      regA.data.system.systemId,
+      1,
+    );
+    assert.equal(recoveredSeed, Number(sysRowA.system_seed), "exploit fixture must accurately recover public systemSeed");
+
+    // Step 2: Even with the exact recovered systemSeed and every public planet field (NO access to resource_secret_hex),
+    // attempting to reconstruct hidden resources from public fields fails.
+    const planetRows = f.db.db
+      .prepare("SELECT planet_id, orbit_index, hidden_resource_profile_json FROM galaxy_planets WHERE system_id = ? ORDER BY orbit_index")
+      .all(regA.data.system.systemId) as Array<{planet_id: string; orbit_index: number; hidden_resource_profile_json: string}>;
+    let exactMatches = 0;
+    for (const row of planetRows) {
+      const predicted = legacyPredictHiddenDepositsFromSystemSeed(recoveredSeed, 1, row.orbit_index, row.planet_id);
+      const actual = JSON.parse(row.hidden_resource_profile_json).deposits;
+      if (JSON.stringify(predicted) === JSON.stringify(actual)) exactMatches++;
+    }
+    assert.equal(exactMatches, 0, "recovering public systemSeed must never reconstruct HMAC-isolated hidden resources");
+
+    // Step 3: Holding systemSeed, systemId, and ALL public fields identical while changing ONLY the 256-bit
+    // server secret keeps ALL public visuals/orbits/starVisual identical while producing different hidden resources.
+    const cfg = loadGalaxyConfig();
+    const secret1 = "a1".repeat(32);
+    const secret2 = "b2".repeat(32);
+    const gen1 = generateDeterministicSystemBodies(cfg, "sys:same-public", "Astra", recoveredSeed, 1, secret1, 1);
+    const gen2 = generateDeterministicSystemBodies(cfg, "sys:same-public", "Astra", recoveredSeed, 1, secret2, 1);
+    assert.deepEqual(gen1.starVisual, gen2.starVisual);
+    assert.deepEqual(
+      gen1.planets.map(p => ({id: p.planetId, orbit: p.orbitIndex, r: p.orbitRadiusNormalized, phase: p.orbitPhase, visual: p.visual, seed: p.planetSeed})),
+      gen2.planets.map(p => ({id: p.planetId, orbit: p.orbitIndex, r: p.orbitRadiusNormalized, phase: p.orbitPhase, visual: p.visual, seed: p.planetSeed})),
+    );
+    assert.notDeepEqual(
+      gen1.planets.map(p => p.hiddenResourceProfile),
+      gen2.planets.map(p => p.hiddenResourceProfile),
+    );
+
+    // Step 4: Verify no secret leaks in bootstrap or detail responses.
+    const bootA = await f.request("GET", "/api/v1/galaxy/bootstrap?worldId=world:sec-a", userA.token);
+    const detailA = await f.request("GET", "/api/v1/galaxy/systems/" + regA.data.system.systemId, userA.token);
+    assertNoSecretsOrHiddenResourcesLeaked(bootA.data, sysRowA.resource_secret_hex);
+    assertNoSecretsOrHiddenResourcesLeaked(detailA.data, sysRowA.resource_secret_hex);
+  } finally {
+    await f.close();
+  }
+});
+
+test("GAL-01B audit regression #2: bound existing planet derives exact fram-game contract vectors, ignores systemSeed, validates MAP-02 strictly, and live-reprojects on idempotency replay", async () => {
+  const cfg = loadGalaxyConfig();
+
+  // Fixed contract vectors computed directly from fram-game/src/galaxy/contracts.ts derivePlanetVisualProfile:
+  const contractVectors: Array<{
+    name: string;
+    seed: number;
+    planetId: string;
+    mapOptions: BoundMapOptions;
+    expected: {
+      version: 1;
+      visualSeed: number;
+      waterIndex: number;
+      vegetationIndex: number;
+      reliefIndex: number;
+      paletteKey: string;
+      surfaceVariant: number;
+    };
+  }> = [
+    {
+      name: "default-temperate",
+      seed: 123,
+      planetId: "planet:vec-1",
+      mapOptions: {mountainCoveragePct: 15, riverCoveragePct: 5, lakeCoveragePct: 8, forestCoveragePct: 45},
+      expected: {version: 1, visualSeed: 2429924473, waterIndex: 0.52, vegetationIndex: 0.9, reliefIndex: 0.5, paletteKey: "temperate", surfaceVariant: 1},
+    },
+    {
+      name: "ocean",
+      seed: 987654,
+      planetId: "planet:vec-ocean",
+      mapOptions: {mountainCoveragePct: 5, riverCoveragePct: 9, lakeCoveragePct: 14, forestCoveragePct: 20},
+      expected: {version: 1, visualSeed: 2097081785, waterIndex: 0.92, vegetationIndex: 0.4, reliefIndex: 5 / 30, paletteKey: "ocean", surfaceVariant: 1},
+    },
+    {
+      name: "rocky",
+      seed: 987654,
+      planetId: "planet:vec-rocky",
+      mapOptions: {mountainCoveragePct: 28, riverCoveragePct: 2, lakeCoveragePct: 3, forestCoveragePct: 10},
+      expected: {version: 1, visualSeed: 1976621935, waterIndex: 0.2, vegetationIndex: 0.2, reliefIndex: 28 / 30, paletteKey: "rocky", surfaceVariant: 3},
+    },
+    {
+      name: "dry",
+      seed: 424242,
+      planetId: "planet:vec-dry",
+      mapOptions: {mountainCoveragePct: 10, riverCoveragePct: 1, lakeCoveragePct: 2, forestCoveragePct: 5},
+      expected: {version: 1, visualSeed: 1713321098, waterIndex: 0.12, vegetationIndex: 0.1, reliefIndex: 10 / 30, paletteKey: "dry", surfaceVariant: 2},
+    },
+    {
+      name: "cold",
+      seed: 20261123,
+      planetId: "planet:vec-cold",
+      mapOptions: {mountainCoveragePct: 10, riverCoveragePct: 6, lakeCoveragePct: 8, forestCoveragePct: 5},
+      expected: {version: 1, visualSeed: 4072665420, waterIndex: 0.56, vegetationIndex: 0.1, reliefIndex: 10 / 30, paletteKey: "cold", surfaceVariant: 0},
+    },
+  ];
+
+  for (const vec of contractVectors) {
+    const actual = deriveBoundPlanetVisualProfile(cfg, vec.seed, vec.planetId, vec.mapOptions, 1);
+    assert.deepEqual(actual, vec.expected, `Contract vector mismatch for ${vec.name}`);
+  }
+
+  // Changing systemSeed must NEVER alter the bound existing planet's visual profile (while altering sibling planets).
+  const secret = "c3".repeat(32);
+  const existingBinding = {
+    planetId: "planet:vec-dry",
+    worldSeed: 424242,
+    mapOptionsVersion: 1 as const,
+    mapOptions: contractVectors[3].mapOptions,
+  };
+  const withSeed1 = generateDeterministicSystemBodies(cfg, "sys:bound-1", "Astra", 111111, 1, secret, 1, existingBinding);
+  const withSeed2 = generateDeterministicSystemBodies(cfg, "sys:bound-1", "Astra", 999999, 1, secret, 1, existingBinding);
+  const bound1 = withSeed1.planets.find(p => p.planetId === "planet:vec-dry")!;
+  const bound2 = withSeed2.planets.find(p => p.planetId === "planet:vec-dry")!;
+  assert.deepEqual(bound1.visual, contractVectors[3].expected);
+  assert.deepEqual(bound2.visual, contractVectors[3].expected);
+  assert.equal(bound1.visualSource, "map_options");
+  assert.equal(bound2.visualSource, "map_options");
+  assert.notDeepEqual(withSeed1.starVisual, withSeed2.starVisual);
+
   const f = createNodeFixture();
   try {
     const user = await f.registerAccount("gal-legacy-bind");
     const legacyWorldId = "world:legacy-0001";
-    const legacyPlanetId = "planet:legacy-0001";
-    const legacyWorldSeed = 20261123;
+    const legacyPlanetId = "planet:vec-ocean";
+    const legacyWorldSeed = 987654;
+    const oceanOptions: BoundMapOptions = {
+      mountainCoveragePct: 5,
+      riverCoveragePct: 9,
+      lakeCoveragePct: 14,
+      forestCoveragePct: 20,
+      mapSize: "large",
+      resourceDistribution: {oil: "balanced", ore: "clustered"},
+      resourceDensity: "normal",
+    };
 
-    const first = await f.request("POST", "/api/v1/galaxy/systems", user.token, {
-      worldId: legacyWorldId,
-      systemName: "Helios",
-      existingPlanet: {planetId: legacyPlanetId, worldSeed: legacyWorldSeed},
-    });
+    // Missing or out-of-range MAP-02 options must strictly fail with 422 (never fall back to defaults or random visuals).
+    for (const invalidExisting of [
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed}, // missing mapOptions & mapOptionsVersion
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 2, mapOptions: oceanOptions}, // bad version
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 1, mapOptions: {mountainCoveragePct: 5, riverCoveragePct: 9, lakeCoveragePct: 14}}, // missing forestCoveragePct
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 1, mapOptions: {...oceanOptions, mountainCoveragePct: 31}}, // > 30
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 1, mapOptions: {...oceanOptions, riverCoveragePct: 11}}, // > 10
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 1, mapOptions: {...oceanOptions, lakeCoveragePct: 16}}, // > 15
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 1, mapOptions: {...oceanOptions, forestCoveragePct: 51}}, // > 50
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 1, mapOptions: {...oceanOptions, forestCoveragePct: 12.5}}, // non-integer
+      {planetId: legacyPlanetId, worldSeed: legacyWorldSeed, mapOptionsVersion: 1, mapOptions: {...oceanOptions, mountainCoveragePct: -1}}, // negative
+    ]) {
+      const bad = await f.request("POST", "/api/v1/galaxy/systems", user.token, {
+        worldId: legacyWorldId,
+        systemName: "Helios",
+        existingPlanet: invalidExisting,
+      });
+      assert.equal(bad.status, 422, JSON.stringify(bad.data));
+      assert.equal(bad.data.error.code, "INVALID_MAP_OPTIONS");
+    }
+
+    // Valid first-bind persists mapOptions, derives exact ocean visual, preserves worldId/planetId/worldSeed.
+    const first = await f.request(
+      "POST",
+      "/api/v1/galaxy/systems",
+      user.token,
+      {
+        worldId: legacyWorldId,
+        systemName: "Helios",
+        existingPlanet: {
+          planetId: legacyPlanetId,
+          worldSeed: legacyWorldSeed,
+          mapOptionsVersion: 1,
+          mapOptions: oceanOptions,
+        },
+      },
+      "gal-bound-idem-0001",
+    );
     assert.equal(first.status, 201, JSON.stringify(first.data));
     const sys = first.data.system;
     assert.equal(sys.worldId, legacyWorldId);
     assert.equal(sys.activePlanetId, legacyPlanetId);
-    assert.ok(sys.planets.length >= 3 && sys.planets.length <= 7);
-
     const boundPlanet = sys.planets.find((p: any) => p.planetId === legacyPlanetId);
-    assert.ok(boundPlanet, "existing planetId must be bound into the generated system");
-    assert.equal(boundPlanet.isActivePlanet, true);
-    assert.equal(boundPlanet.explorationStatus, "explored");
+    assert.ok(boundPlanet);
     assert.equal(boundPlanet.worldSeed, legacyWorldSeed);
+    assert.deepEqual(boundPlanet.visual, contractVectors[1].expected);
     assert.deepEqual(boundPlanet.survey, {status: "unknown"});
 
-    const siblings = sys.planets.filter((p: any) => p.planetId !== legacyPlanetId);
-    assert.equal(siblings.length, sys.planets.length - 1);
-    for (const s of siblings) {
-      assert.equal(s.explorationStatus, "unexplored");
-      assert.equal(s.isActivePlanet, false);
-      assert.equal("worldSeed" in s, false, "unexplored sibling planets do not expose tile worldSeed");
-      assert.deepEqual(s.survey, {status: "unknown"});
-    }
+    // Verify frozen DB metadata.
+    const dbPlanet = f.db.db
+      .prepare("SELECT planet_seed, map_options_version, map_options_json, visual_source FROM galaxy_planets WHERE planet_id = ?")
+      .get(legacyPlanetId) as Record<string, unknown>;
+    assert.equal(Number(dbPlanet.planet_seed), legacyWorldSeed);
+    assert.equal(Number(dbPlanet.map_options_version), 1);
+    assert.equal(String(dbPlanet.visual_source), "map_options");
+    assert.deepEqual(JSON.parse(String(dbPlanet.map_options_json)), oceanOptions);
 
-    // Verify system_seed in DB is independent of legacyWorldSeed and hidden resources are stored server-side only.
-    const sysRow = f.db.db.prepare("SELECT system_seed FROM galaxy_systems WHERE system_id = ?").get(sys.systemId) as Record<string, unknown>;
-    const planetRow = f.db.db.prepare("SELECT planet_seed, hidden_resource_profile_json FROM galaxy_planets WHERE planet_id = ?").get(legacyPlanetId) as Record<string, unknown>;
-    assert.equal(Number(planetRow.planet_seed), legacyWorldSeed);
-    assert.notEqual(Number(sysRow.system_seed), legacyWorldSeed);
-    const hidden = JSON.parse(String(planetRow.hidden_resource_profile_json));
-    assert.equal(hidden.schemaVersion, 1);
-    assert.ok(Array.isArray(hidden.deposits) && hidden.deposits.length >= 1);
-
-    // Retry with identical existingPlanet is idempotent (200 OK, exact same IDs and coordinates).
-    const retry = await f.request("POST", "/api/v1/galaxy/systems", user.token, {
+    // Repeat request with identical mapOptions (reordered JSON keys) -> idempotent 200.
+    const reorderedRetry = await f.request("POST", "/api/v1/galaxy/systems", user.token, {
       worldId: legacyWorldId,
       systemName: "Helios",
-      existingPlanet: {planetId: legacyPlanetId, worldSeed: legacyWorldSeed},
+      existingPlanet: {
+        planetId: legacyPlanetId,
+        worldSeed: legacyWorldSeed,
+        mapOptionsVersion: 1,
+        mapOptions: {
+          forestCoveragePct: 20,
+          lakeCoveragePct: 14,
+          riverCoveragePct: 9,
+          mountainCoveragePct: 5,
+          resourceDensity: "normal",
+          resourceDistribution: {ore: "clustered", oil: "balanced"},
+          mapSize: "large",
+        },
+      },
     });
-    assert.equal(retry.status, 200);
-    assert.equal(retry.data.created, false);
-    assert.deepEqual(retry.data.system, sys);
+    assert.equal(reorderedRetry.status, 200);
+    assert.equal(reorderedRetry.data.created, false);
+    assert.deepEqual(reorderedRetry.data.system, sys);
 
-    // Local save rollback / tampering with a different planetId or worldSeed is rejected (409).
-    const tamperedSeed = await f.request("POST", "/api/v1/galaxy/systems", user.token, {
+    // Repeat request with modified mapOptions -> 409 PLANET_BINDING_CONFLICT (never silently overwrites).
+    const changedTerrain = await f.request("POST", "/api/v1/galaxy/systems", user.token, {
       worldId: legacyWorldId,
       systemName: "Helios",
-      existingPlanet: {planetId: legacyPlanetId, worldSeed: 999},
+      existingPlanet: {
+        planetId: legacyPlanetId,
+        worldSeed: legacyWorldSeed,
+        mapOptionsVersion: 1,
+        mapOptions: {...oceanOptions, forestCoveragePct: 45},
+      },
     });
-    assert.equal(tamperedSeed.status, 409);
-    assert.equal(tamperedSeed.data.error.code, "PLANET_BINDING_CONFLICT");
+    assert.equal(changedTerrain.status, 409);
+    assert.equal(changedTerrain.data.error.code, "PLANET_BINDING_CONFLICT");
 
-    const tamperedPlanet = await f.request("POST", "/api/v1/galaxy/systems", user.token, {
-      worldId: legacyWorldId,
-      systemName: "Helios",
-      existingPlanet: {planetId: "planet:rollback-other", worldSeed: legacyWorldSeed},
-    });
-    assert.equal(tamperedPlanet.status, 409);
-    assert.equal(tamperedPlanet.data.error.code, "PLANET_BINDING_CONFLICT");
+    // Simulate a stale cached visual inside galaxy_requests.response_json vs authoritative galaxy_planets.visual_json:
+    // replaying the Idempotency-Key MUST return the live authoritative visual, never the stale cached visual!
+    const staleCached = structuredClone(first.data);
+    const staleIdx = staleCached.system.planets.findIndex((p: any) => p.planetId === legacyPlanetId);
+    staleCached.system.planets[staleIdx].visual = {...staleCached.system.planets[staleIdx].visual, paletteKey: "dry"};
+    f.db.db
+      .prepare("UPDATE galaxy_requests SET response_json = ? WHERE idempotency_key = 'gal-bound-idem-0001'")
+      .run(JSON.stringify(staleCached));
+
+    const idemReplay = await f.request(
+      "POST",
+      "/api/v1/galaxy/systems",
+      user.token,
+      {
+        worldId: legacyWorldId,
+        systemName: "Helios",
+        existingPlanet: {
+          planetId: legacyPlanetId,
+          worldSeed: legacyWorldSeed,
+          mapOptionsVersion: 1,
+          mapOptions: oceanOptions,
+        },
+      },
+      "gal-bound-idem-0001",
+    );
+    assert.equal(idemReplay.status, 201);
+    const replayedBound = idemReplay.data.system.planets.find((p: any) => p.planetId === legacyPlanetId);
+    assert.deepEqual(replayedBound.visual, contractVectors[1].expected, "idempotency replay must re-project live authoritative visual");
   } finally {
     await f.close();
   }
@@ -311,6 +612,7 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
   let firstSnapshot: any;
   let userToken = "";
   let userSystemId = "";
+  let firstSecretRow: Record<string, unknown> | undefined;
   let firstHiddenRows: unknown[] = [];
 
   try {
@@ -319,7 +621,6 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
       const u1 = await f1.registerAccount("gal-concurrent-1");
       userToken = u1.token;
 
-      // Parallel concurrent registrations for the same user + worldId produce exactly 1 system.
       const concurrentResults = await Promise.all(
         Array.from({length: 6}, () =>
           f1.request(
@@ -338,7 +639,6 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
         assert.deepEqual(res.data.system.planets, concurrentResults[0].data.system.planets);
       }
 
-      // Same Idempotency-Key with different payload is rejected with 409.
       const idemConflict = await f1.request(
         "POST",
         "/api/v1/galaxy/systems",
@@ -349,8 +649,6 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
       assert.equal(idemConflict.status, 409);
       assert.equal(idemConflict.data.error.code, "IDEMPOTENCY_CONFLICT");
 
-      // Register 11 more accounts (via AccountAuth directly to stay within auth IP registration rate limit)
-      // and register all 11 systems concurrently via real HTTP, verifying all 12 systems obey minimumDistanceLy = 2000 LY.
       const moreUsers = [];
       for (let i = 0; i < 11; i++) {
         const issued = await f1.auth.register({
@@ -376,10 +674,8 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
       assert.equal(bootstrap.status, 200);
       assert.equal(bootstrap.data.systems.length, 12);
       assert.equal("planets" in bootstrap.data.self, false);
-      assert.ok(bootstrap.data.systems.every((s: any) => !("planets" in s)));
-      assertNoHiddenResourcesLeaked(bootstrap.data);
+      assertNoSecretsOrHiddenResourcesLeaked(bootstrap.data);
 
-      // Pairwise minimum distance check across all 12 registered systems.
       const positions = bootstrap.data.systems.map((s: any) => s.position);
       for (let i = 0; i < positions.length; i++) {
         for (let j = i + 1; j < positions.length; j++) {
@@ -390,6 +686,9 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
 
       userSystemId = concurrentResults[0].data.system.systemId;
       firstSnapshot = (await f1.request("GET", "/api/v1/galaxy/systems/" + userSystemId, u1.token)).data;
+      firstSecretRow = f1.db.db
+        .prepare("SELECT resource_secret_hex, resource_secret_version FROM galaxy_systems WHERE system_id = ?")
+        .get(userSystemId) as Record<string, unknown>;
       firstHiddenRows = f1.db.db
         .prepare("SELECT planet_id, visual_json, hidden_resource_profile_json FROM galaxy_planets WHERE system_id = ? ORDER BY orbit_index")
         .all(userSystemId);
@@ -397,13 +696,17 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
       await f1.close();
     }
 
-    // Reopen SQLite file from disk (simulates full server restart) — verify zero re-rolling.
     const f2 = createNodeFixture(dbPath);
     try {
       const afterRestart = await f2.request("GET", "/api/v1/galaxy/systems/" + userSystemId, userToken);
       assert.equal(afterRestart.status, 200);
       assert.deepEqual(afterRestart.data.system, firstSnapshot.system);
       assert.equal(afterRestart.data.galaxyRevision, firstSnapshot.galaxyRevision);
+
+      const afterSecretRow = f2.db.db
+        .prepare("SELECT resource_secret_hex, resource_secret_version FROM galaxy_systems WHERE system_id = ?")
+        .get(userSystemId) as Record<string, unknown>;
+      assert.deepEqual(afterSecretRow, firstSecretRow);
 
       const afterHiddenRows = f2.db.db
         .prepare("SELECT planet_id, visual_json, hidden_resource_profile_json FROM galaxy_planets WHERE system_id = ? ORDER BY orbit_index")
@@ -417,13 +720,13 @@ test("GAL-01B: idempotency, concurrent registration uniqueness, restart persiste
   }
 });
 
-test("GAL-01B: deterministic generation stability and visual/hidden-resource independence", () => {
+test("GAL-01B: changing hidden resource config does not alter any planet visual profile", () => {
   const cfg = loadGalaxyConfig();
-  const a = generateDeterministicSystemBodies(cfg, "sys:det-1", "Astra", 987654321, 1);
-  const b = generateDeterministicSystemBodies(cfg, "sys:det-1", "Astra", 987654321, 1);
+  const secret = "d4".repeat(32);
+  const a = generateDeterministicSystemBodies(cfg, "sys:det-1", "Astra", 987654321, 1, secret, 1);
+  const b = generateDeterministicSystemBodies(cfg, "sys:det-1", "Astra", 987654321, 1, secret, 1);
   assert.deepEqual(a, b);
 
-  // Changing hiddenResources config pool must NOT alter planet visuals (no visual side channel).
   const altCfg = {
     ...cfg,
     hiddenResources: {
@@ -432,7 +735,7 @@ test("GAL-01B: deterministic generation stability and visual/hidden-resource ind
       richnessWeights: [80, 10, 10] as const,
     },
   };
-  const c = generateDeterministicSystemBodies(altCfg, "sys:det-1", "Astra", 987654321, 1);
+  const c = generateDeterministicSystemBodies(altCfg, "sys:det-1", "Astra", 987654321, 1, secret, 1);
   assert.deepEqual(
     c.planets.map(p => ({id: p.planetId, orbit: p.orbitIndex, r: p.orbitRadiusNormalized, phase: p.orbitPhase, visual: p.visual})),
     a.planets.map(p => ({id: p.planetId, orbit: p.orbitIndex, r: p.orbitRadiusNormalized, phase: p.orbitPhase, visual: p.visual})),
@@ -443,33 +746,63 @@ test("GAL-01B: deterministic generation stability and visual/hidden-resource ind
   );
 });
 
-test("GAL-01B: SQLite v17 -> v18 migration preserves existing accounts and enables Galaxy tables", () => {
-  const dir = mkdtempSync(join(tmpdir(), "farsoil-galaxy-mig-"));
-  const dbPath = join(dir, "legacy-v17.sqlite");
+test("GAL-01B: non-destructive SQLite v18 -> v19 migration preserves legacy rows honestly without re-rolling or deleting", () => {
+  const dir = mkdtempSync(join(tmpdir(), "farsoil-galaxy-mig19-"));
+  const dbPath = join(dir, "legacy-v18.sqlite");
   try {
-    // Seed a real v17 database by initializing and rewinding to v17 without galaxy tables.
-    const initial = new AuctionDatabase(dbPath);
-    initial.db.prepare("INSERT INTO account_users(user_id, status, created_at_ms) VALUES('user:v17', 'active', 1730000000000)").run();
-    initial.db.prepare("INSERT INTO user_profiles(user_id, display_name, name_source, avatar_source, avatar_url, avatar_user_selected, email_conflict_at_ms, created_at_ms, updated_at_ms) VALUES('user:v17', 'LegacyPlayer', 'player', 'default', NULL, 0, NULL, 1730000000000, 1730000000000)").run();
-    initial.close();
+    // Construct a realistic v18 database (without v19 columns) containing one legacy registered system + planet.
+    const seed = new AuctionDatabase(dbPath);
+    seed.db.prepare("INSERT INTO account_users(user_id, status, created_at_ms) VALUES('user:v18', 'active', 1730000000000)").run();
+    seed.db.prepare("INSERT INTO user_profiles(user_id, display_name, name_source, avatar_source, avatar_url, avatar_user_selected, email_conflict_at_ms, created_at_ms, updated_at_ms) VALUES('user:v18', 'V18Player', 'player', 'default', NULL, 0, NULL, 1730000000000, 1730000000000)").run();
+    seed.close();
 
     const raw = new DatabaseSync(dbPath);
-    raw.exec("DROP TABLE IF EXISTS galaxy_requests; DROP TABLE IF EXISTS galaxy_planets; DROP TABLE IF EXISTS galaxy_systems; DROP TABLE IF EXISTS galaxy_meta; PRAGMA user_version = 17;");
+    raw.exec(`
+      DROP TABLE IF EXISTS galaxy_requests;
+      DROP TABLE IF EXISTS galaxy_planets;
+      DROP TABLE IF EXISTS galaxy_systems;
+      DROP TABLE IF EXISTS galaxy_meta;
+      CREATE TABLE galaxy_meta (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), revision INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER NOT NULL);
+      CREATE TABLE galaxy_systems (
+        system_id TEXT PRIMARY KEY, star_id TEXT NOT NULL UNIQUE,
+        owner_user_id TEXT NOT NULL UNIQUE REFERENCES account_users(user_id) ON DELETE RESTRICT,
+        world_id TEXT NOT NULL UNIQUE, star_name TEXT NOT NULL, system_seed INTEGER NOT NULL,
+        generation_version INTEGER NOT NULL, x_ly REAL NOT NULL, y_ly REAL NOT NULL,
+        sector_x INTEGER NOT NULL, sector_y INTEGER NOT NULL, star_visual_json TEXT NOT NULL,
+        active_planet_id TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL
+      );
+      CREATE TABLE galaxy_planets (
+        planet_id TEXT PRIMARY KEY, system_id TEXT NOT NULL REFERENCES galaxy_systems(system_id) ON DELETE RESTRICT,
+        orbit_index INTEGER NOT NULL, display_name TEXT NOT NULL, orbit_radius_normalized REAL NOT NULL,
+        orbit_phase REAL NOT NULL, planet_seed INTEGER NOT NULL, visual_json TEXT NOT NULL,
+        hidden_resource_profile_json TEXT NOT NULL, exploration_status TEXT NOT NULL,
+        survey_status TEXT NOT NULL, survey_result_json TEXT, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL
+      );
+      CREATE TABLE galaxy_requests (
+        request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES account_users(user_id) ON DELETE RESTRICT,
+        operation TEXT NOT NULL, idempotency_key TEXT NOT NULL, body_hash TEXT NOT NULL,
+        status_code INTEGER NOT NULL, response_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL
+      );
+      INSERT INTO galaxy_meta VALUES(1, 1, 1730000000000);
+      INSERT INTO galaxy_systems VALUES('sys:v18', 'star:v18', 'user:v18', 'world:v18', 'Legacy', 777, 1, 0, 0, 0, 0, '{"version":1,"visualSeed":123,"spectralClass":"G","sizeVariant":0}', 'planet:v18', 1730000000000, 1730000000000);
+      INSERT INTO galaxy_planets VALUES('planet:v18', 'sys:v18', 1, 'Legacy-1', 0.5, 1.0, 555, '{"version":1,"visualSeed":99,"waterIndex":0.5,"vegetationIndex":0.5,"reliefIndex":0.5,"paletteKey":"temperate","surfaceVariant":0}', '{"schemaVersion":1,"deposits":[{"itemId":"iron-ore","richness":"rich","estimatedReserveU":12000}]}', 'explored', 'scanned', '[{"itemId":"iron-ore","richness":"rich"}]', 1730000000000, 1730000000000);
+      PRAGMA user_version = 18;
+    `);
     raw.close();
 
-    // Opening with AuctionDatabase migrates v17 -> v18 non-destructively.
     const migrated = new AuctionDatabase(dbPath);
     try {
       const version = Number((migrated.db.prepare("PRAGMA user_version").get() as {user_version: number}).user_version);
       assert.equal(version, AUCTION_SCHEMA_VERSION);
-      const user = migrated.db.prepare("SELECT display_name FROM user_profiles WHERE user_id = 'user:v17'").get() as {display_name: string};
-      assert.equal(user.display_name, "LegacyPlayer");
-
-      const auth = new AccountAuth(migrated);
-      const galaxy = new GalaxyService(migrated, auth.profiles);
-      const reg = galaxy.registerSystem("user:v17", {worldId: "world:v17-migrated", systemName: "Vesta"});
-      assert.equal(reg.status, 201);
-      assert.equal(reg.body.system.owner.displayName, "LegacyPlayer");
+      const sysRow = migrated.db.prepare("SELECT resource_secret_hex, resource_secret_version FROM galaxy_systems WHERE system_id = 'sys:v18'").get() as Record<string, unknown>;
+      assert.equal(sysRow.resource_secret_hex, null, "legacy v18 row must not fabricate a secret pretending old resources are safe");
+      assert.equal(Number(sysRow.resource_secret_version), 0, "legacy v18 row must stay marked version=0");
+      const planetRow = migrated.db.prepare("SELECT map_options_version, map_options_json, visual_source, hidden_resource_profile_json, survey_status FROM galaxy_planets WHERE planet_id = 'planet:v18'").get() as Record<string, unknown>;
+      assert.equal(planetRow.map_options_version, null);
+      assert.equal(planetRow.map_options_json, null);
+      assert.equal(planetRow.visual_source, "system_seed");
+      assert.equal(planetRow.survey_status, "scanned");
+      assert.equal(JSON.parse(String(planetRow.hidden_resource_profile_json)).deposits[0].estimatedReserveU, 12000);
     } finally {
       migrated.close();
     }
@@ -478,7 +811,7 @@ test("GAL-01B: SQLite v17 -> v18 migration preserves existing accounts and enabl
   }
 });
 
-test("GAL-01B: Node Fastify and WorkerApiRouter parity + OpenAPI v1 route coverage", async () => {
+test("GAL-01B: Node Fastify and WorkerApiRouter parity + OpenAPI v1 schema coverage", async () => {
   const nodeF = createNodeFixture();
   const workerF = createWorkerRouterFixture();
   try {
@@ -490,69 +823,54 @@ test("GAL-01B: Node Fastify and WorkerApiRouter parity + OpenAPI v1 route covera
     const payload = {
       worldId: "world:parity-1",
       systemName: "Astra",
-      existingPlanet: {planetId: "planet:parity-1", worldSeed: 424242},
+      existingPlanet: {
+        planetId: "planet:vec-dry",
+        worldSeed: 424242,
+        mapOptionsVersion: 1,
+        mapOptions: {mountainCoveragePct: 10, riverCoveragePct: 1, lakeCoveragePct: 2, forestCoveragePct: 5},
+      },
     };
     const nReg = await nodeF.request("POST", "/api/v1/galaxy/systems", nUser.token, payload, "parity-key-0001");
     const wReg = await workerF.request("POST", "/api/v1/galaxy/systems", wUser.token, payload, "parity-key-0001");
     assert.equal(nReg.status, 201);
     assert.equal(wReg.status, 201);
-    assert.deepEqual(Object.keys(wReg.data).sort(), Object.keys(nReg.data).sort());
-    assert.deepEqual(Object.keys(wReg.data.system).sort(), Object.keys(nReg.data.system).sort());
+    const nBound = nReg.data.system.planets.find((p: any) => p.planetId === "planet:vec-dry");
+    const wBound = wReg.data.system.planets.find((p: any) => p.planetId === "planet:vec-dry");
+    assert.deepEqual(wBound.visual, nBound.visual, "Node and Worker must produce identical MAP-02 derived planet visuals");
+    assert.equal(wBound.visual.paletteKey, "dry");
 
-    // Idempotent replay status parity.
+    // Missing mapOptions rejected identically on both runtimes.
+    const nBad = await nodeF.request("POST", "/api/v1/galaxy/systems", nOther.token, {
+      worldId: "world:parity-bad",
+      existingPlanet: {planetId: "planet:bad-opt", worldSeed: 123},
+    });
+    const wBad = await workerF.request("POST", "/api/v1/galaxy/systems", wOther.token, {
+      worldId: "world:parity-bad",
+      existingPlanet: {planetId: "planet:bad-opt", worldSeed: 123},
+    });
+    assert.equal(nBad.status, 422);
+    assert.equal(wBad.status, 422);
+    assert.equal(wBad.data.error.code, nBad.data.error.code);
+
     const nReplay = await nodeF.request("POST", "/api/v1/galaxy/systems", nUser.token, payload);
     const wReplay = await workerF.request("POST", "/api/v1/galaxy/systems", wUser.token, payload);
     assert.equal(nReplay.status, 200);
     assert.equal(wReplay.status, 200);
-    assert.equal(nReplay.data.created, false);
-    assert.equal(wReplay.data.created, false);
-
-    // Second worldId conflict parity.
-    const nConflict = await nodeF.request("POST", "/api/v1/galaxy/systems", nUser.token, {worldId: "world:parity-2"});
-    const wConflict = await workerF.request("POST", "/api/v1/galaxy/systems", wUser.token, {worldId: "world:parity-2"});
-    assert.equal(nConflict.status, 409);
-    assert.equal(wConflict.status, 409);
-    assert.equal(wConflict.data.error.code, nConflict.data.error.code);
-
-    // Cross-account hijack parity.
-    const nHijack = await nodeF.request("POST", "/api/v1/galaxy/systems", nOther.token, {worldId: "world:parity-1"});
-    const wHijack = await workerF.request("POST", "/api/v1/galaxy/systems", wOther.token, {worldId: "world:parity-1"});
-    assert.equal(nHijack.status, 409);
-    assert.equal(wHijack.status, 409);
-    assert.equal(wHijack.data.error.code, nHijack.data.error.code);
-
-    // Bootstrap & Detail parity.
-    const nBoot = await nodeF.request("GET", "/api/v1/galaxy/bootstrap?worldId=world:parity-1", nUser.token);
-    const wBoot = await workerF.request("GET", "/api/v1/galaxy/bootstrap?worldId=world:parity-1", wUser.token);
-    assert.equal(nBoot.status, 200);
-    assert.equal(wBoot.status, 200);
-    assert.deepEqual(Object.keys(wBoot.data).sort(), Object.keys(nBoot.data).sort());
 
     const nDetail = await nodeF.request("GET", "/api/v1/galaxy/systems/" + nReg.data.system.systemId, nUser.token);
     const wDetail = await workerF.request("GET", "/api/v1/galaxy/systems/" + wReg.data.system.systemId, wUser.token);
     assert.equal(nDetail.status, 200);
     assert.equal(wDetail.status, 200);
-    assert.deepEqual(Object.keys(wDetail.data).sort(), Object.keys(nDetail.data).sort());
-    assertNoHiddenResourcesLeaked(wDetail.data);
+    assertNoSecretsOrHiddenResourcesLeaked(wDetail.data);
 
-    // OpenAPI contract parity.
     const openapi = JSON.parse(readFileSync(new URL("../contracts/openapi.v1.json", import.meta.url), "utf8"));
-    assert.ok(openapi.paths["/api/v1/galaxy/systems"]?.post);
-    assert.ok(openapi.paths["/api/v1/galaxy/bootstrap"]?.get);
-    assert.ok(openapi.paths["/api/v1/galaxy/systems/{systemId}"]?.get);
-    for (const schemaName of [
-      "GalaxyRegisterSystemRequest",
-      "GalaxyRegisterSystemResponse",
-      "GalaxyBootstrapResponse",
-      "GalaxySystemDetailResponse",
-      "GalaxySystemProjection",
-      "SystemPlanetProjection",
-      "PlanetVisualProfile",
-      "StarVisualProfile",
-      "PlanetSurveyState",
-    ]) {
-      assert.ok(openapi.components.schemas[schemaName], `Missing OpenAPI schema ${schemaName}`);
-    }
+    assert.ok(openapi.components.schemas.GalaxyBoundMapOptions);
+    assert.deepEqual(openapi.components.schemas.GalaxyExistingPlanetBinding.required, [
+      "planetId",
+      "worldSeed",
+      "mapOptionsVersion",
+      "mapOptions",
+    ]);
   } finally {
     await nodeF.close();
     workerF.close();

@@ -12,7 +12,7 @@ import buildingGoldSchema from "../../p15-building-gold-schema.sql";
 import respecSchema from "../../p15-respec-schema.sql";
 import galaxySchema from "../../galaxy-schema.sql";
 
-export const WORKER_SCHEMA_VERSION=18;
+export const WORKER_SCHEMA_VERSION=19;
 
 const finalFinanceSchema=`
 CREATE TABLE p15_finance_records (
@@ -37,10 +37,27 @@ export function initializeWorkerSchema(database){
   if(rows.length){
     const current=Number(rows.at(-1).version);
     if(current===WORKER_SCHEMA_VERSION)return current;
-    if(current===17){
+    if(current===17||current===18){
       database.transaction(()=>{
         database.db.exec("PRAGMA foreign_keys=OFF");
-        database.db.exec(galaxySchema);
+        if(current<18)database.db.exec(galaxySchema);
+        if(current<19){
+          const gSystems=database.db.prepare("PRAGMA table_info(galaxy_systems)").all();
+          if(!gSystems.some(c=>c.name==="resource_secret_hex"))
+            database.db.exec("ALTER TABLE galaxy_systems ADD COLUMN resource_secret_hex TEXT");
+          if(!gSystems.some(c=>c.name==="resource_secret_version"))
+            database.db.exec("ALTER TABLE galaxy_systems ADD COLUMN resource_secret_version INTEGER NOT NULL DEFAULT 0 CHECK(resource_secret_version >= 0)");
+          const gPlanets=database.db.prepare("PRAGMA table_info(galaxy_planets)").all();
+          if(!gPlanets.some(c=>c.name==="map_options_version"))
+            database.db.exec("ALTER TABLE galaxy_planets ADD COLUMN map_options_version INTEGER");
+          if(!gPlanets.some(c=>c.name==="map_options_json"))
+            database.db.exec("ALTER TABLE galaxy_planets ADD COLUMN map_options_json TEXT");
+          if(!gPlanets.some(c=>c.name==="visual_source"))
+            database.db.exec("ALTER TABLE galaxy_planets ADD COLUMN visual_source TEXT NOT NULL DEFAULT 'system_seed' CHECK(visual_source IN ('system_seed', 'map_options'))");
+          const gReqs=database.db.prepare("PRAGMA table_info(galaxy_requests)").all();
+          if(!gReqs.some(c=>c.name==="system_id"))
+            database.db.exec("ALTER TABLE galaxy_requests ADD COLUMN system_id TEXT REFERENCES galaxy_systems(system_id) ON DELETE RESTRICT");
+        }
         const violations=database.db.prepare("PRAGMA foreign_key_check").all();
         if(violations.length)throw new Error("FARSOIL Worker schema migration violated foreign keys");
         database.db.exec("PRAGMA foreign_keys=ON");

@@ -1,4 +1,4 @@
-import {createHash, randomBytes, randomUUID} from "node:crypto";
+import {createHash, createHmac, randomBytes, randomUUID} from "node:crypto";
 import galaxyConfigRaw from "../config/galaxy.v1.json" with {type: "json"};
 import {ApiError} from "./config.ts";
 import type {AuctionDatabase} from "./database.ts";
@@ -9,12 +9,34 @@ export type SpectralClass = "F" | "G" | "K" | "M";
 export type PlanetPaletteKey = "temperate" | "ocean" | "dry" | "rocky" | "cold";
 export type ResourceRichness = "trace" | "normal" | "rich";
 export type GalaxyRelation = "self" | "friendly" | "neutral" | "hostile" | "unknown";
+export type MapSize = "small" | "large" | "extraLarge";
+export type ResourceDistributionMode = "scattered" | "balanced" | "clustered";
+export type ResourceDensity = "sparse" | "normal" | "rich";
+
+export type BoundMapOptions = Readonly<{
+  mountainCoveragePct: number;
+  riverCoveragePct: number;
+  lakeCoveragePct: number;
+  forestCoveragePct: number;
+  mapSize?: MapSize;
+  resourceDistribution?: Readonly<{oil: ResourceDistributionMode; ore: ResourceDistributionMode}>;
+  resourceDensity?: ResourceDensity;
+}>;
+
+export type ExistingPlanetInput = Readonly<{
+  planetId: string;
+  worldSeed: number;
+  mapOptionsVersion: number;
+  mapOptions: BoundMapOptions;
+}>;
 
 export type GalaxyConfig = Readonly<{
   schemaVersion: number;
   configId: string;
   status: string;
   generationVersion: number;
+  resourceSecretVersion: number;
+  mapOptionsVersion: number;
   starVisualVersion: number;
   planetVisualVersion: number;
   systemName: Readonly<{minLength: number; maxLength: number; defaultName: string}>;
@@ -43,6 +65,28 @@ export type GalaxyConfig = Readonly<{
     palettes: readonly PlanetPaletteKey[];
     surfaceVariants: number;
     indexRange: readonly [number, number];
+    mapOptionRanges: Readonly<{
+      mountainCoveragePct: readonly [number, number];
+      riverCoveragePct: readonly [number, number];
+      lakeCoveragePct: readonly [number, number];
+      forestCoveragePct: readonly [number, number];
+    }>;
+    profileMapping: Readonly<{
+      maxMountainPct: number;
+      maxRiverPct: number;
+      maxLakePct: number;
+      maxForestPct: number;
+      surfaceVariants: number;
+      thresholds: Readonly<{
+        oceanMinWater: number;
+        rockyMinRelief: number;
+        rockyMaxVegetation: number;
+        dryMaxWater: number;
+        dryMaxVegetation: number;
+        coldMaxVegetation: number;
+        coldMinWater: number;
+      }>;
+    }>;
   }>;
   hiddenResources: Readonly<{
     schemaVersion: number;
@@ -139,29 +183,44 @@ export type GalaxySystemDetailResponse = Readonly<{
   system: GalaxySystemProjection;
 }>;
 
-type HiddenResourceDeposit = Readonly<{
+export type HiddenResourceDeposit = Readonly<{
   itemId: string;
   richness: ResourceRichness;
   estimatedReserveU: number;
 }>;
 
-type HiddenResourceProfile = Readonly<{
+export type HiddenResourceProfile = Readonly<{
   schemaVersion: 1;
   deposits: readonly HiddenResourceDeposit[];
 }>;
 
-type ExistingPlanetInput = Readonly<{
-  planetId: string;
-  worldSeed: number;
-}>;
-
 const MAX_UINT32 = 0xffff_ffff;
 const TWO_PI = Math.PI * 2;
+const RESOURCE_SECRET_BYTES = 32;
+const RESOURCE_SECRET_HEX_PATTERN = /^[0-9a-f]{64}$/i;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,179}$/;
 const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/;
 const CONTROL_PATTERN = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
 const ALLOWED_REGISTER_KEYS = new Set(["worldId", "systemName", "existingPlanet"]);
-const ALLOWED_EXISTING_PLANET_KEYS = new Set(["planetId", "worldSeed"]);
+const ALLOWED_EXISTING_PLANET_KEYS = new Set(["planetId", "worldSeed", "mapOptionsVersion", "mapOptions"]);
+const REQUIRED_MAP_OPTION_KEYS = [
+  "mountainCoveragePct",
+  "riverCoveragePct",
+  "lakeCoveragePct",
+  "forestCoveragePct",
+] as const;
+const ALLOWED_MAP_OPTION_KEYS = new Set([
+  "mountainCoveragePct",
+  "riverCoveragePct",
+  "lakeCoveragePct",
+  "forestCoveragePct",
+  "mapSize",
+  "resourceDistribution",
+  "resourceDensity",
+]);
+const ALLOWED_MAP_SIZES = new Set<MapSize>(["small", "large", "extraLarge"]);
+const ALLOWED_RESOURCE_MODES = new Set<ResourceDistributionMode>(["scattered", "balanced", "clustered"]);
+const ALLOWED_RESOURCE_DENSITIES = new Set<ResourceDensity>(["sparse", "normal", "rich"]);
 const WORLD_OWNERSHIP_TABLES = [
   "p15_world_inventories",
   "p15_machines",
@@ -173,6 +232,7 @@ const WORLD_OWNERSHIP_TABLES = [
   "achievement_event_sources",
 ] as const;
 
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const round4 = (value: number): number => Math.round(value * 10000) / 10000;
 const sha256 = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -186,6 +246,17 @@ export function fnv1a32(seed: number, label: string): number {
   return h || 1;
 }
 
+/** Exact match to fram-game hashVisualSeed(worldSeed, planetId, version) for bound Tile Worlds. */
+export function hashBoundPlanetVisualSeed(worldSeed: number, planetId: string, version = 1): number {
+  let h = (2166136261 ^ (worldSeed >>> 0)) >>> 0;
+  h = Math.imul(h, 16777619) >>> 0;
+  h = Math.imul((h ^ (version >>> 0)) >>> 0, 16777619) >>> 0;
+  for (let i = 0; i < planetId.length; i++) {
+    h = Math.imul((h ^ planetId.charCodeAt(i)) >>> 0, 16777619) >>> 0;
+  }
+  return h || 1;
+}
+
 export function mulberry32(seed: number): () => number {
   let state = seed | 0;
   return () => {
@@ -194,6 +265,42 @@ export function mulberry32(seed: number): () => number {
     n ^= n + Math.imul(n ^ (n >>> 7), 61 | n);
     return ((n ^ (n >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/**
+ * Cryptographic HMAC-SHA256 counter-mode PRF keyed by a 256-bit server-only secret.
+ * Never reduces secret entropy through a 32-bit PRNG state and never reads public visual seeds or systemSeed.
+ */
+class HmacResourceStream {
+  private readonly secret: Buffer;
+  private readonly context: string;
+  private counter = 0;
+  private block: Buffer = Buffer.alloc(0);
+  private offset = 0;
+
+  constructor(secretHex: string, context: string) {
+    if (!RESOURCE_SECRET_HEX_PATTERN.test(secretHex)) {
+      throw new Error("Invalid 256-bit resource secret");
+    }
+    this.secret = Buffer.from(secretHex, "hex");
+    this.context = context;
+  }
+
+  nextUint32(): number {
+    if (this.offset + 4 > this.block.length) {
+      this.block = createHmac("sha256", this.secret)
+        .update(`${this.context}:block:${this.counter++}`)
+        .digest();
+      this.offset = 0;
+    }
+    const value = this.block.readUInt32BE(this.offset);
+    this.offset += 4;
+    return value;
+  }
+
+  nextUnit(): number {
+    return this.nextUint32() / 4294967296;
+  }
 }
 
 function pickWeighted<T>(items: readonly T[], weights: readonly number[], rng: () => number): T {
@@ -210,9 +317,20 @@ export function loadGalaxyConfig(): GalaxyConfig {
   const c = structuredClone(galaxyConfigRaw) as unknown as GalaxyConfig;
   const posInt = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
   const posNum = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v > 0;
+  const validRange = (r: unknown) =>
+    Array.isArray(r) &&
+    r.length === 2 &&
+    Number.isSafeInteger(r[0]) &&
+    Number.isSafeInteger(r[1]) &&
+    r[0] >= 0 &&
+    r[1] <= 100 &&
+    r[0] < r[1];
+  const pm = c?.planets?.profileMapping;
+  const mr = c?.planets?.mapOptionRanges;
   if (
     !c || c.schemaVersion !== 1 || c.configId !== "galaxy-v1" ||
-    !posInt(c.generationVersion) || c.starVisualVersion !== 1 || c.planetVisualVersion !== 1 ||
+    !posInt(c.generationVersion) || !posInt(c.resourceSecretVersion) ||
+    !posInt(c.mapOptionsVersion) || c.starVisualVersion !== 1 || c.planetVisualVersion !== 1 ||
     !posInt(c.systemName?.minLength) || !posInt(c.systemName?.maxLength) ||
     c.systemName.minLength > c.systemName.maxLength ||
     typeof c.systemName.defaultName !== "string" || !c.systemName.defaultName.trim() ||
@@ -238,6 +356,11 @@ export function loadGalaxyConfig(): GalaxyConfig {
     !posInt(c.planets.surfaceVariants) ||
     !Array.isArray(c.planets.indexRange) || c.planets.indexRange.length !== 2 ||
     c.planets.indexRange[0] < 0 || c.planets.indexRange[1] > 1 || c.planets.indexRange[0] >= c.planets.indexRange[1] ||
+    !mr || !validRange(mr.mountainCoveragePct) || !validRange(mr.riverCoveragePct) ||
+    !validRange(mr.lakeCoveragePct) || !validRange(mr.forestCoveragePct) ||
+    !pm || !posNum(pm.maxMountainPct) || !posNum(pm.maxRiverPct) || !posNum(pm.maxLakePct) ||
+    !posNum(pm.maxForestPct) || !posInt(pm.surfaceVariants) ||
+    !pm.thresholds || Object.values(pm.thresholds).some(v => typeof v !== "number" || v < 0 || v > 1) ||
     c.hiddenResources?.schemaVersion !== 1 ||
     !Array.isArray(c.hiddenResources.pool) || c.hiddenResources.pool.length < c.hiddenResources.maxSignalsPerPlanet ||
     !posInt(c.hiddenResources.minSignalsPerPlanet) || !posInt(c.hiddenResources.maxSignalsPerPlanet) ||
@@ -257,9 +380,90 @@ export function loadGalaxyConfig(): GalaxyConfig {
 }
 
 /**
+ * Deterministic PlanetVisualProfile derived from (worldSeed, planetId, resolved MapGenerationOptions, visualVersion).
+ * Matches fram-game/src/galaxy/contracts.ts derivePlanetVisualProfile bit-for-bit without cross-repo runtime imports.
+ */
+export function deriveBoundPlanetVisualProfile(
+  config: GalaxyConfig,
+  worldSeed: number,
+  planetId: string,
+  mapOptions: BoundMapOptions,
+  visualVersion: 1 = 1,
+): PlanetVisualProfile {
+  const pm = config.planets.profileMapping;
+  const waterIndex = clamp01((mapOptions.riverCoveragePct + mapOptions.lakeCoveragePct) / (pm.maxRiverPct + pm.maxLakePct));
+  const vegetationIndex = clamp01(mapOptions.forestCoveragePct / pm.maxForestPct);
+  const reliefIndex = clamp01(mapOptions.mountainCoveragePct / pm.maxMountainPct);
+  const th = pm.thresholds;
+  let paletteKey: PlanetPaletteKey = "temperate";
+  if (waterIndex >= th.oceanMinWater) paletteKey = "ocean";
+  else if (reliefIndex >= th.rockyMinRelief && vegetationIndex <= th.rockyMaxVegetation) paletteKey = "rocky";
+  else if (waterIndex <= th.dryMaxWater && vegetationIndex <= th.dryMaxVegetation) paletteKey = "dry";
+  else if (vegetationIndex <= th.coldMaxVegetation && waterIndex >= th.coldMinWater) paletteKey = "cold";
+  const visualSeed = hashBoundPlanetVisualSeed(worldSeed, planetId, visualVersion);
+  const surfaceVariant = visualSeed % pm.surfaceVariants;
+  return {
+    version: visualVersion,
+    visualSeed,
+    waterIndex,
+    vegetationIndex,
+    reliefIndex,
+    paletteKey,
+    surfaceVariant,
+  };
+}
+
+/**
+ * Cryptographically isolated hidden resource generator keyed strictly by the server-only 256-bit secret.
+ * Knowing systemSeed, worldSeed, starVisual.visualSeed, planetId, or all public fields is insufficient to predict outputs.
+ */
+export function generateHiddenResourceProfile(
+  config: GalaxyConfig,
+  resourceSecretHex: string,
+  resourceSecretVersion: number,
+  systemId: string,
+  planetId: string,
+  orbitIndex: number,
+  generationVersion: number,
+): HiddenResourceProfile {
+  if (!Number.isSafeInteger(resourceSecretVersion) || resourceSecretVersion < 1) {
+    throw new Error("Valid resourceSecretVersion >= 1 is required");
+  }
+  const stream = new HmacResourceStream(
+    resourceSecretHex,
+    `hidden-resources:v${resourceSecretVersion}:gen${generationVersion}:${systemId}:${planetId}:orbit:${orbitIndex}`,
+  );
+  const unit = () => stream.nextUnit();
+  const depositCount =
+    config.hiddenResources.minSignalsPerPlanet +
+    Math.floor(
+      unit() * (config.hiddenResources.maxSignalsPerPlanet - config.hiddenResources.minSignalsPerPlanet + 1),
+    );
+  const availablePool = [...config.hiddenResources.pool];
+  const deposits: HiddenResourceDeposit[] = [];
+  for (let d = 0; d < depositCount && availablePool.length > 0; d++) {
+    const idx = Math.floor(unit() * availablePool.length);
+    const [itemId] = availablePool.splice(idx, 1);
+    const richness = pickWeighted(
+      config.hiddenResources.richnessLevels,
+      config.hiddenResources.richnessWeights,
+      unit,
+    );
+    const [minU, maxU] = config.hiddenResources.reservesRangeU[richness];
+    const estimatedReserveU = minU + Math.floor(unit() * (maxU - minU + 1));
+    deposits.push({itemId, richness, estimatedReserveU});
+  }
+  return {
+    schemaVersion: 1,
+    deposits,
+  };
+}
+
+/**
  * Pure deterministic system body generator.
- * Separates visual PRNG streams from hidden resource PRNG streams so client visual profiles
- * can never leak hidden resource facts.
+ * - Hidden resources derive strictly from the server-only 256-bit HMAC secret (never from systemSeed or visual seeds).
+ * - Bound existing planets derive visuals deterministically from (worldSeed, planetId, resolved MapGenerationOptions).
+ * - Unexplored sibling planets derive display-only visuals from systemSeed (never from hidden resources).
  */
 export function generateDeterministicSystemBodies(
   config: GalaxyConfig,
@@ -267,6 +471,8 @@ export function generateDeterministicSystemBodies(
   starName: string,
   systemSeed: number,
   generationVersion: number,
+  resourceSecretHex: string,
+  resourceSecretVersion: number,
   existingPlanet?: ExistingPlanetInput,
 ): {
   starVisual: StarVisualProfile;
@@ -278,6 +484,9 @@ export function generateDeterministicSystemBodies(
     orbitRadiusNormalized: number;
     orbitPhase: number;
     planetSeed: number;
+    mapOptionsVersion: number | null;
+    mapOptionsJson: string | null;
+    visualSource: "system_seed" | "map_options";
     visual: PlanetVisualProfile;
     hiddenResourceProfile: HiddenResourceProfile;
     explorationStatus: "explored" | "unexplored";
@@ -310,7 +519,9 @@ export function generateDeterministicSystemBodies(
   const planets = [];
   for (let orbitIndex = 1; orbitIndex <= planetCount; orbitIndex++) {
     const isInitial = orbitIndex === initialOrbitIndex;
-    const rawRadius = minR + slotSpan * (orbitIndex - 1) + (structureRng() - 0.5) * slotSpan * config.planets.orbitJitterFraction;
+    const isBoundExisting = isInitial && existingPlanet !== undefined;
+    const rawRadius =
+      minR + slotSpan * (orbitIndex - 1) + (structureRng() - 0.5) * slotSpan * config.planets.orbitJitterFraction;
     const orbitRadiusNormalized = round4(Math.max(0.05, Math.min(0.99, rawRadius)));
     const orbitPhase = round4(structureRng() * TWO_PI * 0.9999);
 
@@ -318,51 +529,55 @@ export function generateDeterministicSystemBodies(
       .update(`${systemId}:v${generationVersion}:orbit:${orbitIndex}:${systemSeed}`)
       .digest("hex")
       .slice(0, 24);
-    const planetId = isInitial && existingPlanet ? existingPlanet.planetId : `planet:${deterministicHash}`;
-    const planetSeed =
-      isInitial && existingPlanet
-        ? existingPlanet.worldSeed
-        : fnv1a32(systemSeed, `planet-seed:v${generationVersion}:orbit:${orbitIndex}`);
+    const planetId = isBoundExisting ? existingPlanet.planetId : `planet:${deterministicHash}`;
+    const planetSeed = isBoundExisting
+      ? existingPlanet.worldSeed
+      : fnv1a32(systemSeed, `planet-seed:v${generationVersion}:orbit:${orbitIndex}`);
     if (isInitial) activePlanetId = planetId;
 
-    // Independent visual PRNG stream — NEVER touches hidden resource stream.
-    const visualSeed = fnv1a32(systemSeed, `planet-visual:v${generationVersion}:orbit:${orbitIndex}:${planetId}`);
-    const visualRng = mulberry32(visualSeed);
-    const paletteKey = config.planets.palettes[Math.floor(visualRng() * config.planets.palettes.length)];
-    const [idxMin, idxMax] = config.planets.indexRange;
-    const lerpIdx = () => round2(idxMin + (idxMax - idxMin) * visualRng());
-    const visual: PlanetVisualProfile = {
-      version: 1,
-      visualSeed,
-      waterIndex: lerpIdx(),
-      vegetationIndex: lerpIdx(),
-      reliefIndex: lerpIdx(),
-      paletteKey,
-      surfaceVariant: Math.floor(visualRng() * config.planets.surfaceVariants),
-    };
+    let visual: PlanetVisualProfile;
+    let mapOptionsVersion: number | null = null;
+    let mapOptionsJson: string | null = null;
+    let visualSource: "system_seed" | "map_options" = "system_seed";
 
-    // Independent hidden resource PRNG stream — NEVER leaked to visual or unscanned public DTO.
-    const resourceRng = mulberry32(fnv1a32(systemSeed, `planet-hidden-resources:v${generationVersion}:orbit:${orbitIndex}:${planetId}`));
-    const depositCount =
-      config.hiddenResources.minSignalsPerPlanet +
-      Math.floor(
-        resourceRng() *
-          (config.hiddenResources.maxSignalsPerPlanet - config.hiddenResources.minSignalsPerPlanet + 1),
+    if (isBoundExisting) {
+      visual = deriveBoundPlanetVisualProfile(
+        config,
+        existingPlanet.worldSeed,
+        existingPlanet.planetId,
+        existingPlanet.mapOptions,
+        1,
       );
-    const availablePool = [...config.hiddenResources.pool];
-    const deposits: HiddenResourceDeposit[] = [];
-    for (let d = 0; d < depositCount && availablePool.length > 0; d++) {
-      const idx = Math.floor(resourceRng() * availablePool.length);
-      const [itemId] = availablePool.splice(idx, 1);
-      const richness = pickWeighted(
-        config.hiddenResources.richnessLevels,
-        config.hiddenResources.richnessWeights,
-        resourceRng,
-      );
-      const [minU, maxU] = config.hiddenResources.reservesRangeU[richness];
-      const estimatedReserveU = minU + Math.floor(resourceRng() * (maxU - minU + 1));
-      deposits.push({itemId, richness, estimatedReserveU});
+      mapOptionsVersion = existingPlanet.mapOptionsVersion;
+      mapOptionsJson = JSON.stringify(existingPlanet.mapOptions);
+      visualSource = "map_options";
+    } else {
+      // Independent display-only visual stream — NEVER touches hidden resource secret or deposits.
+      const visualSeed = fnv1a32(systemSeed, `planet-visual:v${generationVersion}:orbit:${orbitIndex}:${planetId}`);
+      const visualRng = mulberry32(visualSeed);
+      const paletteKey = config.planets.palettes[Math.floor(visualRng() * config.planets.palettes.length)];
+      const [idxMin, idxMax] = config.planets.indexRange;
+      const lerpIdx = () => round2(idxMin + (idxMax - idxMin) * visualRng());
+      visual = {
+        version: 1,
+        visualSeed,
+        waterIndex: lerpIdx(),
+        vegetationIndex: lerpIdx(),
+        reliefIndex: lerpIdx(),
+        paletteKey,
+        surfaceVariant: Math.floor(visualRng() * config.planets.surfaceVariants),
+      };
     }
+
+    const hiddenResourceProfile = generateHiddenResourceProfile(
+      config,
+      resourceSecretHex,
+      resourceSecretVersion,
+      systemId,
+      planetId,
+      orbitIndex,
+      generationVersion,
+    );
 
     planets.push({
       planetId,
@@ -371,11 +586,11 @@ export function generateDeterministicSystemBodies(
       orbitRadiusNormalized,
       orbitPhase,
       planetSeed,
+      mapOptionsVersion,
+      mapOptionsJson,
+      visualSource,
       visual,
-      hiddenResourceProfile: {
-        schemaVersion: 1 as const,
-        deposits,
-      },
+      hiddenResourceProfile,
       explorationStatus: isInitial ? ("explored" as const) : ("unexplored" as const),
       surveyStatus: "unknown" as const,
     });
@@ -391,13 +606,14 @@ export class GalaxyService {
   readonly clock: () => number;
   private readonly randomUnit: () => number;
   private readonly randomUint32: () => number;
+  private readonly randomSecretHex: () => string;
 
   constructor(
     store: AuctionDatabase,
     profiles: UserProfiles,
     config: GalaxyConfig = loadGalaxyConfig(),
     clock: () => number = Date.now,
-    rng?: {unit?: () => number; uint32?: () => number},
+    rng?: {unit?: () => number; uint32?: () => number; secretHex?: () => string},
   ) {
     this.store = store;
     this.profiles = profiles;
@@ -405,6 +621,7 @@ export class GalaxyService {
     this.clock = clock;
     this.randomUnit = rng?.unit ?? (() => randomBytes(4).readUInt32BE(0) / 4294967296);
     this.randomUint32 = rng?.uint32 ?? (() => randomBytes(4).readUInt32BE(0));
+    this.randomSecretHex = rng?.secretHex ?? (() => randomBytes(RESOURCE_SECRET_BYTES).toString("hex"));
   }
 
   private one(sql: string, ...args: (string | number | null)[]): Row | undefined {
@@ -450,6 +667,79 @@ export class GalaxyService {
     return normalized;
   }
 
+  private validateBoundMapOptions(value: unknown): BoundMapOptions {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new ApiError(422, "INVALID_MAP_OPTIONS", "existingPlanet.mapOptions must be a resolved MAP-02 object");
+    }
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record);
+    if (keys.some(k => !ALLOWED_MAP_OPTION_KEYS.has(k))) {
+      throw new ApiError(422, "INVALID_MAP_OPTIONS", "Unexpected fields in existingPlanet.mapOptions");
+    }
+    const ranges = this.config.planets.mapOptionRanges;
+    for (const key of REQUIRED_MAP_OPTION_KEYS) {
+      if (!(key in record)) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", `Missing required map option: ${key}`);
+      }
+      const n = record[key];
+      const [minVal, maxVal] = ranges[key];
+      if (typeof n !== "number" || !Number.isSafeInteger(n) || n < minVal || n > maxVal) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", `${key} must be an integer in [${minVal}, ${maxVal}]`);
+      }
+    }
+    let mapSize: MapSize | undefined;
+    if ("mapSize" in record) {
+      if (typeof record.mapSize !== "string" || !ALLOWED_MAP_SIZES.has(record.mapSize as MapSize)) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", "Invalid mapSize");
+      }
+      mapSize = record.mapSize as MapSize;
+    }
+    let resourceDistribution: {oil: ResourceDistributionMode; ore: ResourceDistributionMode} | undefined;
+    if ("resourceDistribution" in record) {
+      const dist = record.resourceDistribution;
+      if (!dist || typeof dist !== "object" || Array.isArray(dist)) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", "Invalid resourceDistribution");
+      }
+      const d = dist as Record<string, unknown>;
+      const dKeys = Object.keys(d);
+      if (
+        dKeys.length !== 2 ||
+        !dKeys.includes("oil") ||
+        !dKeys.includes("ore") ||
+        typeof d.oil !== "string" ||
+        typeof d.ore !== "string" ||
+        !ALLOWED_RESOURCE_MODES.has(d.oil as ResourceDistributionMode) ||
+        !ALLOWED_RESOURCE_MODES.has(d.ore as ResourceDistributionMode)
+      ) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", "Invalid resourceDistribution values");
+      }
+      resourceDistribution = {
+        oil: d.oil as ResourceDistributionMode,
+        ore: d.ore as ResourceDistributionMode,
+      };
+    }
+    let resourceDensity: ResourceDensity | undefined;
+    if ("resourceDensity" in record) {
+      if (
+        typeof record.resourceDensity !== "string" ||
+        !ALLOWED_RESOURCE_DENSITIES.has(record.resourceDensity as ResourceDensity)
+      ) {
+        throw new ApiError(422, "INVALID_MAP_OPTIONS", "Invalid resourceDensity");
+      }
+      resourceDensity = record.resourceDensity as ResourceDensity;
+    }
+    // Canonical key order so repeat-binding comparisons and hashes are stable.
+    return {
+      mountainCoveragePct: record.mountainCoveragePct as number,
+      riverCoveragePct: record.riverCoveragePct as number,
+      lakeCoveragePct: record.lakeCoveragePct as number,
+      forestCoveragePct: record.forestCoveragePct as number,
+      ...(mapSize !== undefined ? {mapSize} : {}),
+      ...(resourceDistribution !== undefined ? {resourceDistribution} : {}),
+      ...(resourceDensity !== undefined ? {resourceDensity} : {}),
+    };
+  }
+
   private validateExistingPlanet(value: unknown): ExistingPlanetInput | undefined {
     if (value === undefined) return undefined;
     if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -457,15 +747,30 @@ export class GalaxyService {
     }
     const record = value as Record<string, unknown>;
     const keys = Object.keys(record);
-    if (keys.length !== 2 || keys.some(k => !ALLOWED_EXISTING_PLANET_KEYS.has(k))) {
+    if (keys.some(k => !ALLOWED_EXISTING_PLANET_KEYS.has(k))) {
+      throw new ApiError(422, "INVALID_EXISTING_PLANET", "Unexpected fields in existingPlanet");
+    }
+    if (!("planetId" in record) || !("worldSeed" in record)) {
       throw new ApiError(422, "INVALID_EXISTING_PLANET", "existingPlanet requires planetId and worldSeed");
+    }
+    if (!("mapOptionsVersion" in record) || !("mapOptions" in record)) {
+      throw new ApiError(
+        422,
+        "INVALID_MAP_OPTIONS",
+        "existingPlanet requires resolved mapOptionsVersion and mapOptions",
+      );
     }
     const planetId = this.validateId(record.planetId, "planetId", "INVALID_PLANET_ID");
     const worldSeed = record.worldSeed;
     if (typeof worldSeed !== "number" || !Number.isInteger(worldSeed) || worldSeed < 0 || worldSeed > MAX_UINT32) {
       throw new ApiError(422, "INVALID_WORLD_SEED", "worldSeed must be a 32-bit unsigned integer");
     }
-    return {planetId, worldSeed};
+    const mapOptionsVersion = record.mapOptionsVersion;
+    if (mapOptionsVersion !== this.config.mapOptionsVersion) {
+      throw new ApiError(422, "INVALID_MAP_OPTIONS", "Unsupported or invalid mapOptionsVersion");
+    }
+    const mapOptions = this.validateBoundMapOptions(record.mapOptions);
+    return {planetId, worldSeed, mapOptionsVersion, mapOptions};
   }
 
   private parseIdempotencyKey(header: string | string[] | null | undefined): string | null {
@@ -579,7 +884,7 @@ export class GalaxyService {
   }
 
   private projectPlanets(systemId: string, activePlanetId: string, isSelf: boolean): SystemPlanetProjection[] {
-    // Deliberately excludes hidden_resource_profile_json from SQL projection.
+    // Deliberately selects only public planet columns; never selects hidden_resource_profile_json or map_options_json.
     const rows = this.all(
       "SELECT planet_id, orbit_index, display_name, orbit_radius_normalized, orbit_phase, planet_seed, visual_json, exploration_status, survey_status, survey_result_json " +
         "FROM galaxy_planets WHERE system_id = ? ORDER BY orbit_index ASC",
@@ -644,6 +949,21 @@ export class GalaxyService {
     };
   }
 
+  private selectPublicSystemById(systemId: string): Row | undefined {
+    // Deliberately excludes system_seed and resource_secret_hex from read projections.
+    return this.one(
+      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id FROM galaxy_systems WHERE system_id = ?",
+      systemId,
+    );
+  }
+
+  private selectPublicSystemByOwner(userId: string): Row | undefined {
+    return this.one(
+      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id FROM galaxy_systems WHERE owner_user_id = ?",
+      userId,
+    );
+  }
+
   registerSystem(
     userId: string,
     rawBody: unknown,
@@ -670,7 +990,7 @@ export class GalaxyService {
 
       if (idempotencyKey) {
         const previous = this.one(
-          "SELECT body_hash, status_code, response_json FROM galaxy_requests WHERE user_id = ? AND operation = 'register_system' AND idempotency_key = ?",
+          "SELECT body_hash, system_id, status_code, response_json FROM galaxy_requests WHERE user_id = ? AND operation = 'register_system' AND idempotency_key = ?",
           userId,
           idempotencyKey,
         );
@@ -678,14 +998,36 @@ export class GalaxyService {
           if (String(previous.body_hash) !== bodyHash) {
             throw new ApiError(409, "IDEMPOTENCY_CONFLICT", "Idempotency-Key reused with different request payload");
           }
+          const stored = JSON.parse(String(previous.response_json)) as RegisterSystemOutcome["body"];
+          // Re-project live from galaxy_systems + galaxy_planets so corrected planet visuals
+          // are always reflected and stale cached visuals can never replay.
+          const liveSystemRow =
+            typeof previous.system_id === "string"
+              ? this.selectPublicSystemById(previous.system_id)
+              : this.selectPublicSystemByOwner(userId);
+          if (!liveSystemRow) {
+            return {status: Number(previous.status_code) as 200 | 201, body: stored};
+          }
+          const liveSystem = this.projectSystem(
+            liveSystemRow,
+            userId,
+            {xLy: Number(liveSystemRow.x_ly), yLy: Number(liveSystemRow.y_ly)},
+            true,
+          );
           return {
             status: Number(previous.status_code) as 200 | 201,
-            body: JSON.parse(String(previous.response_json)) as RegisterSystemOutcome["body"],
+            body: {
+              schemaVersion: 1,
+              serverTime: stored.serverTime,
+              galaxyRevision: this.currentRevision(),
+              created: stored.created,
+              system: liveSystem,
+            },
           };
         }
       }
 
-      const own = this.one("SELECT * FROM galaxy_systems WHERE owner_user_id = ?", userId);
+      const own = this.selectPublicSystemByOwner(userId);
       if (own) {
         if (String(own.world_id) !== worldId) {
           throw new ApiError(
@@ -696,19 +1038,22 @@ export class GalaxyService {
         }
         if (existingPlanet) {
           const bound = this.one(
-            "SELECT planet_id, planet_seed, exploration_status FROM galaxy_planets WHERE system_id = ? AND planet_id = ?",
+            "SELECT planet_id, planet_seed, exploration_status, map_options_version, map_options_json FROM galaxy_planets WHERE system_id = ? AND planet_id = ?",
             String(own.system_id),
             existingPlanet.planetId,
           );
+          const expectedMapOptionsJson = JSON.stringify(existingPlanet.mapOptions);
           if (
             !bound ||
             String(bound.exploration_status) !== "explored" ||
-            Number(bound.planet_seed) !== existingPlanet.worldSeed
+            Number(bound.planet_seed) !== existingPlanet.worldSeed ||
+            Number(bound.map_options_version) !== existingPlanet.mapOptionsVersion ||
+            String(bound.map_options_json ?? "") !== expectedMapOptionsJson
           ) {
             throw new ApiError(
               409,
               "PLANET_BINDING_CONFLICT",
-              "Existing planet identity or worldSeed does not match the bound sovereign system",
+              "Existing planet identity, worldSeed, or mapOptions does not match the bound sovereign system",
             );
           }
         }
@@ -730,11 +1075,12 @@ export class GalaxyService {
         };
         if (idempotencyKey) {
           this.exec(
-            "INSERT INTO galaxy_requests(request_id, user_id, operation, idempotency_key, body_hash, status_code, response_json, created_at_ms) VALUES(?, ?, 'register_system', ?, ?, ?, ?, ?)",
+            "INSERT INTO galaxy_requests(request_id, user_id, operation, idempotency_key, body_hash, system_id, status_code, response_json, created_at_ms) VALUES(?, ?, 'register_system', ?, ?, ?, ?, ?, ?)",
             "greq:" + randomUUID(),
             userId,
             idempotencyKey,
             bodyHash,
+            String(own.system_id),
             outcome.status,
             JSON.stringify(outcome.body),
             now,
@@ -757,6 +1103,11 @@ export class GalaxyService {
       const systemId = "sys:" + randomUUID();
       const starId = "star:" + randomUUID();
       const systemSeed = this.randomUint32() >>> 0;
+      const resourceSecretHex = this.randomSecretHex();
+      const resourceSecretVersion = this.config.resourceSecretVersion;
+      if (!RESOURCE_SECRET_HEX_PATTERN.test(resourceSecretHex)) {
+        throw new Error("Server failed to allocate 256-bit resource secret");
+      }
       const coords = this.allocateCoordinates();
       const generated = generateDeterministicSystemBodies(
         this.config,
@@ -764,14 +1115,17 @@ export class GalaxyService {
         systemName,
         systemSeed,
         this.config.generationVersion,
+        resourceSecretHex,
+        resourceSecretVersion,
         existingPlanet,
       );
 
       this.exec(
         "INSERT INTO galaxy_systems(" +
           "system_id, star_id, owner_user_id, world_id, star_name, system_seed, generation_version, " +
+          "resource_secret_hex, resource_secret_version, " +
           "x_ly, y_ly, sector_x, sector_y, star_visual_json, active_planet_id, created_at_ms, updated_at_ms" +
-          ") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          ") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         systemId,
         starId,
         userId,
@@ -779,6 +1133,8 @@ export class GalaxyService {
         systemName,
         systemSeed,
         this.config.generationVersion,
+        resourceSecretHex,
+        resourceSecretVersion,
         coords.xLy,
         coords.yLy,
         coords.sectorX,
@@ -793,9 +1149,9 @@ export class GalaxyService {
         this.exec(
           "INSERT INTO galaxy_planets(" +
             "planet_id, system_id, orbit_index, display_name, orbit_radius_normalized, orbit_phase, " +
-            "planet_seed, visual_json, hidden_resource_profile_json, exploration_status, survey_status, " +
-            "survey_result_json, created_at_ms, updated_at_ms" +
-            ") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+            "planet_seed, map_options_version, map_options_json, visual_source, visual_json, " +
+            "hidden_resource_profile_json, exploration_status, survey_status, survey_result_json, created_at_ms, updated_at_ms" +
+            ") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
           planet.planetId,
           systemId,
           planet.orbitIndex,
@@ -803,6 +1159,9 @@ export class GalaxyService {
           planet.orbitRadiusNormalized,
           planet.orbitPhase,
           planet.planetSeed,
+          planet.mapOptionsVersion,
+          planet.mapOptionsJson,
+          planet.visualSource,
           JSON.stringify(planet.visual),
           JSON.stringify(planet.hiddenResourceProfile),
           planet.explorationStatus,
@@ -813,7 +1172,7 @@ export class GalaxyService {
       }
 
       const revision = this.bumpRevision(now);
-      const inserted = this.one("SELECT * FROM galaxy_systems WHERE system_id = ?", systemId)!;
+      const inserted = this.selectPublicSystemById(systemId)!;
       const system = this.projectSystem(inserted, userId, {xLy: coords.xLy, yLy: coords.yLy}, true);
       const outcome: RegisterSystemOutcome = {
         status: 201,
@@ -828,11 +1187,12 @@ export class GalaxyService {
 
       if (idempotencyKey) {
         this.exec(
-          "INSERT INTO galaxy_requests(request_id, user_id, operation, idempotency_key, body_hash, status_code, response_json, created_at_ms) VALUES(?, ?, 'register_system', ?, ?, ?, ?, ?)",
+          "INSERT INTO galaxy_requests(request_id, user_id, operation, idempotency_key, body_hash, system_id, status_code, response_json, created_at_ms) VALUES(?, ?, 'register_system', ?, ?, ?, ?, ?, ?)",
           "greq:" + randomUUID(),
           userId,
           idempotencyKey,
           bodyHash,
+          systemId,
           outcome.status,
           JSON.stringify(outcome.body),
           now,
@@ -849,7 +1209,7 @@ export class GalaxyService {
         ? undefined
         : this.validateId(worldIdParam, "worldId", "INVALID_WORLD");
 
-    const own = this.one("SELECT * FROM galaxy_systems WHERE owner_user_id = ?", userId);
+    const own = this.selectPublicSystemByOwner(userId);
     if (!own || (worldId !== undefined && String(own.world_id) !== worldId)) {
       throw new ApiError(404, "SYSTEM_NOT_FOUND", "Sovereign star system not found for this account");
     }
@@ -858,7 +1218,8 @@ export class GalaxyService {
     const self = this.projectSystem(own, userId, origin, false);
 
     const rows = this.all(
-      "SELECT * FROM galaxy_systems ORDER BY ((x_ly - ?) * (x_ly - ?) + (y_ly - ?) * (y_ly - ?)) ASC, system_id ASC LIMIT ?",
+      "SELECT system_id, star_id, owner_user_id, world_id, star_name, x_ly, y_ly, star_visual_json, active_planet_id " +
+        "FROM galaxy_systems ORDER BY ((x_ly - ?) * (x_ly - ?) + (y_ly - ?) * (y_ly - ?)) ASC, system_id ASC LIMIT ?",
       origin.xLy,
       origin.xLy,
       origin.yLy,
@@ -879,7 +1240,7 @@ export class GalaxyService {
   systemDetail(userId: string, systemIdParam: unknown): GalaxySystemDetailResponse {
     this.requireActiveAccount(userId);
     const systemId = this.validateId(systemIdParam, "systemId", "INVALID_SYSTEM_ID");
-    const target = this.one("SELECT * FROM galaxy_systems WHERE system_id = ?", systemId);
+    const target = this.selectPublicSystemById(systemId);
     if (!target) {
       throw new ApiError(404, "SYSTEM_NOT_FOUND", "Star system not found");
     }

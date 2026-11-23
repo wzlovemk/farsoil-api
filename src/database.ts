@@ -2,7 +2,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const AUCTION_SCHEMA_VERSION=18 as const;
+export const AUCTION_SCHEMA_VERSION=19 as const;
 type Row = Record<string, unknown>;
 
 export class AuctionDatabase {
@@ -97,6 +97,25 @@ export class AuctionDatabase {
         if(v<16)this.db.exec(buildingGoldSchema);
         if(v<17)this.db.exec(respecSchema);
         if(v<18)this.db.exec(galaxySchema);
+        if(v<19){
+          // Non-destructive v18 -> v19 migration: legacy v18 rows stay tagged with
+          // resource_secret_version=0 / visual_source='system_seed' without fabricating secrets or re-rolling facts.
+          const gSystems=this.db.prepare("PRAGMA table_info(galaxy_systems)").all() as Row[];
+          if(!gSystems.some(c=>c.name==="resource_secret_hex"))
+            this.db.exec("ALTER TABLE galaxy_systems ADD COLUMN resource_secret_hex TEXT");
+          if(!gSystems.some(c=>c.name==="resource_secret_version"))
+            this.db.exec("ALTER TABLE galaxy_systems ADD COLUMN resource_secret_version INTEGER NOT NULL DEFAULT 0 CHECK(resource_secret_version >= 0)");
+          const gPlanets=this.db.prepare("PRAGMA table_info(galaxy_planets)").all() as Row[];
+          if(!gPlanets.some(c=>c.name==="map_options_version"))
+            this.db.exec("ALTER TABLE galaxy_planets ADD COLUMN map_options_version INTEGER");
+          if(!gPlanets.some(c=>c.name==="map_options_json"))
+            this.db.exec("ALTER TABLE galaxy_planets ADD COLUMN map_options_json TEXT");
+          if(!gPlanets.some(c=>c.name==="visual_source"))
+            this.db.exec("ALTER TABLE galaxy_planets ADD COLUMN visual_source TEXT NOT NULL DEFAULT 'system_seed' CHECK(visual_source IN ('system_seed', 'map_options'))");
+          const gReqs=this.db.prepare("PRAGMA table_info(galaxy_requests)").all() as Row[];
+          if(!gReqs.some(c=>c.name==="system_id"))
+            this.db.exec("ALTER TABLE galaxy_requests ADD COLUMN system_id TEXT REFERENCES galaxy_systems(system_id) ON DELETE RESTRICT");
+        }
         if(this.db.prepare("PRAGMA foreign_key_check").all().length)
           throw new Error("Account database migration violated foreign keys");
         this.db.exec("PRAGMA user_version="+AUCTION_SCHEMA_VERSION);

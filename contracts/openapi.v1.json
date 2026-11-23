@@ -6056,12 +6056,88 @@
           }
         }
       },
+      "GalaxyBoundMapOptions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mountainCoveragePct",
+          "riverCoveragePct",
+          "lakeCoveragePct",
+          "forestCoveragePct"
+        ],
+        "properties": {
+          "mountainCoveragePct": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 30
+          },
+          "riverCoveragePct": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "lakeCoveragePct": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 15
+          },
+          "forestCoveragePct": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50
+          },
+          "mapSize": {
+            "type": "string",
+            "enum": [
+              "small",
+              "large",
+              "extraLarge"
+            ]
+          },
+          "resourceDistribution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "oil",
+              "ore"
+            ],
+            "properties": {
+              "oil": {
+                "type": "string",
+                "enum": [
+                  "scattered",
+                  "balanced",
+                  "clustered"
+                ]
+              },
+              "ore": {
+                "type": "string",
+                "enum": [
+                  "scattered",
+                  "balanced",
+                  "clustered"
+                ]
+              }
+            }
+          },
+          "resourceDensity": {
+            "type": "string",
+            "enum": [
+              "sparse",
+              "normal",
+              "rich"
+            ]
+          }
+        }
+      },
       "GalaxyExistingPlanetBinding": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "planetId",
-          "worldSeed"
+          "worldSeed",
+          "mapOptionsVersion",
+          "mapOptions"
         ],
         "properties": {
           "planetId": {
@@ -6074,6 +6150,15 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 4294967295
+          },
+          "mapOptionsVersion": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "mapOptions": {
+            "$ref": "#/components/schemas/GalaxyBoundMapOptions"
           }
         }
       },
